@@ -1,0 +1,647 @@
+// Mock Transaction Data for Testing
+// Each marketplace has representative transactions to test critical calculations
+
+export type MarketplaceCode = 'US' | 'UK' | 'DE' | 'FR' | 'IT' | 'ES' | 'CA' | 'AU' | 'AE' | 'SA';
+
+export interface MockTransaction {
+  id: string;
+  fileName: string;
+  date: Date;
+  type: string;
+  categoryType: string;
+  orderId: string;
+  sku: string;
+  description: string;
+  descriptionLower: string;
+  quantity: number;
+  marketplace: string;
+  marketplaceCode: MarketplaceCode;
+  fulfillment: string;
+  postalCode: string;
+  tax: number;
+  productSales: number;
+  productSalesTax: number;
+  shippingCredits: number;
+  shippingCreditsTax: number;
+  giftWrapCredits: number;
+  giftWrapCreditsTax: number;
+  promotionalRebates: number;
+  promotionalRebatesTax: number;
+  sellingFees: number;
+  fbaFees: number;
+  otherTransactionFees: number;
+  other: number;
+  total: number;
+  vat: number;
+  liquidations: number;
+}
+
+// Expected test results for each marketplace
+export interface MarketplaceTestExpectations {
+  refundRecoveryRate: number;
+  hasVAT: boolean;
+  vatRate?: number;
+  currency: string;
+  hasLiquidations: boolean;
+}
+
+// Test expectations for validation
+export const MARKETPLACE_TEST_EXPECTATIONS: Record<MarketplaceCode, MarketplaceTestExpectations> = {
+  US: {
+    refundRecoveryRate: 0.50,
+    hasVAT: false,
+    currency: 'USD',
+    hasLiquidations: true,
+  },
+  UK: {
+    refundRecoveryRate: 0.30,
+    hasVAT: true,
+    vatRate: 0.20,
+    currency: 'GBP',
+    hasLiquidations: false,
+  },
+  DE: {
+    refundRecoveryRate: 0.30,
+    hasVAT: true,
+    vatRate: 0.19,
+    currency: 'EUR',
+    hasLiquidations: false,
+  },
+  FR: {
+    refundRecoveryRate: 0.30,
+    hasVAT: true,
+    vatRate: 0.20,
+    currency: 'EUR',
+    hasLiquidations: false,
+  },
+  IT: {
+    refundRecoveryRate: 0.30,
+    hasVAT: true,
+    vatRate: 0.22,
+    currency: 'EUR',
+    hasLiquidations: false,
+  },
+  ES: {
+    refundRecoveryRate: 0.30,
+    hasVAT: true,
+    vatRate: 0.21,
+    currency: 'EUR',
+    hasLiquidations: false,
+  },
+  CA: {
+    refundRecoveryRate: 0.40,
+    hasVAT: true,
+    vatRate: 0.13,
+    currency: 'CAD',
+    hasLiquidations: false,
+  },
+  AU: {
+    refundRecoveryRate: 0.40,
+    hasVAT: true,
+    vatRate: 0.10,
+    currency: 'AUD',
+    hasLiquidations: false,
+  },
+  AE: {
+    refundRecoveryRate: 0.30,
+    hasVAT: true,
+    vatRate: 0.05,
+    currency: 'AED',
+    hasLiquidations: false,
+  },
+  SA: {
+    refundRecoveryRate: 0.30,
+    hasVAT: true,
+    vatRate: 0.15,
+    currency: 'SAR',
+    hasLiquidations: false,
+  },
+};
+
+// Helper to create mock transaction
+function createMockTransaction(
+  marketplace: MarketplaceCode,
+  marketplaceDomain: string,
+  overrides: Partial<MockTransaction>
+): MockTransaction {
+  const baseTransaction: MockTransaction = {
+    id: `${marketplace}-${Math.random().toString(36).substr(2, 9)}`,
+    fileName: `test-${marketplace}.xlsx`,
+    date: new Date('2024-01-15'),
+    type: 'Order',
+    categoryType: 'Order',
+    orderId: `${marketplace}-ORDER-001`,
+    sku: 'TEST-SKU-001',
+    description: 'Test Product',
+    descriptionLower: 'test product',
+    quantity: 1,
+    marketplace: marketplaceDomain,
+    marketplaceCode: marketplace,
+    fulfillment: 'FBA',
+    postalCode: '00000',
+    tax: 0,
+    productSales: 100,
+    productSalesTax: 0,
+    shippingCredits: 0,
+    shippingCreditsTax: 0,
+    giftWrapCredits: 0,
+    giftWrapCreditsTax: 0,
+    promotionalRebates: 0,
+    promotionalRebatesTax: 0,
+    sellingFees: -15,
+    fbaFees: -5,
+    otherTransactionFees: 0,
+    other: 0,
+    total: 80,
+    vat: 0,
+    liquidations: 0,
+    ...overrides,
+  };
+
+  return baseTransaction;
+}
+
+// Mock data for each marketplace
+// Each includes: Order (FBA), Refund, Service Fee (Advertising), Order (FBM)
+export const MOCK_TRANSACTIONS: Record<MarketplaceCode, MockTransaction[]> = {
+  US: [
+    createMockTransaction('US', 'Amazon.com', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'US-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      total: 80,
+      postalCode: '10001',
+    }),
+    createMockTransaction('US', 'Amazon.com', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'US-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      total: -40,
+      quantity: -1,
+    }),
+    createMockTransaction('US', 'Amazon.com', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'US-AD-001',
+      description: 'Cost of Advertising',
+      descriptionLower: 'cost of advertising',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -20,
+    }),
+    createMockTransaction('US', 'Amazon.com', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'US-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      total: 68,
+    }),
+  ],
+  UK: [
+    createMockTransaction('UK', 'Amazon.co.uk', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'UK-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      vat: 20,
+      total: 80,
+      postalCode: 'SW1A 1AA',
+    }),
+    createMockTransaction('UK', 'Amazon.co.uk', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'UK-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      vat: -10,
+      total: -50,
+      quantity: -1,
+    }),
+    createMockTransaction('UK', 'Amazon.co.uk', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'UK-AD-001',
+      description: 'Cost of Advertising',
+      descriptionLower: 'cost of advertising',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -15,
+    }),
+    createMockTransaction('UK', 'Amazon.co.uk', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'UK-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      vat: 16,
+      total: 68,
+    }),
+  ],
+  DE: [
+    createMockTransaction('DE', 'Amazon.de', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'DE-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      vat: 19,
+      total: 80,
+      postalCode: '10115',
+    }),
+    createMockTransaction('DE', 'Amazon.de', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'DE-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      vat: -9.5,
+      total: -49.5,
+      quantity: -1,
+    }),
+    createMockTransaction('DE', 'Amazon.de', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'DE-AD-001',
+      description: 'Werbekosten',
+      descriptionLower: 'werbekosten',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -18,
+    }),
+    createMockTransaction('DE', 'Amazon.de', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'DE-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      vat: 15.2,
+      total: 68,
+    }),
+  ],
+  FR: [
+    createMockTransaction('FR', 'Amazon.fr', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'FR-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      vat: 20,
+      total: 80,
+      postalCode: '75001',
+    }),
+    createMockTransaction('FR', 'Amazon.fr', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'FR-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      vat: -10,
+      total: -50,
+      quantity: -1,
+    }),
+    createMockTransaction('FR', 'Amazon.fr', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'FR-AD-001',
+      description: 'Prix de la publicité',
+      descriptionLower: 'prix de la publicité',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -17,
+    }),
+    createMockTransaction('FR', 'Amazon.fr', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'FR-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      vat: 16,
+      total: 68,
+    }),
+  ],
+  IT: [
+    createMockTransaction('IT', 'Amazon.it', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'IT-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      vat: 22,
+      total: 80,
+      postalCode: '00118',
+    }),
+    createMockTransaction('IT', 'Amazon.it', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'IT-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      vat: -11,
+      total: -51,
+      quantity: -1,
+    }),
+    createMockTransaction('IT', 'Amazon.it', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'IT-AD-001',
+      description: 'Costo della pubblicità',
+      descriptionLower: 'costo della pubblicità',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -16,
+    }),
+    createMockTransaction('IT', 'Amazon.it', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'IT-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      vat: 17.6,
+      total: 68,
+    }),
+  ],
+  ES: [
+    createMockTransaction('ES', 'Amazon.es', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'ES-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      vat: 21,
+      total: 80,
+      postalCode: '28001',
+    }),
+    createMockTransaction('ES', 'Amazon.es', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'ES-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      vat: -10.5,
+      total: -51,
+      quantity: -1,
+    }),
+    createMockTransaction('ES', 'Amazon.es', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'ES-AD-001',
+      description: 'Gastos de publicidad',
+      descriptionLower: 'gastos de publicidad',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -17,
+    }),
+    createMockTransaction('ES', 'Amazon.es', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'ES-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      vat: 16.8,
+      total: 68,
+    }),
+  ],
+  CA: [
+    createMockTransaction('CA', 'Amazon.ca', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'CA-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      vat: 13,
+      total: 80,
+      postalCode: 'M5H 2N2',
+    }),
+    createMockTransaction('CA', 'Amazon.ca', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'CA-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      vat: -6.5,
+      total: -46.5,
+      quantity: -1,
+    }),
+    createMockTransaction('CA', 'Amazon.ca', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'CA-AD-001',
+      description: 'Cost of Advertising',
+      descriptionLower: 'cost of advertising',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -19,
+    }),
+    createMockTransaction('CA', 'Amazon.ca', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'CA-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      vat: 10.4,
+      total: 68,
+    }),
+  ],
+  AU: [
+    createMockTransaction('AU', 'Amazon.com.au', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'AU-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      vat: 10,
+      total: 80,
+      postalCode: '2000',
+    }),
+    createMockTransaction('AU', 'Amazon.com.au', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'AU-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      vat: -5,
+      total: -45,
+      quantity: -1,
+    }),
+    createMockTransaction('AU', 'Amazon.com.au', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'AU-AD-001',
+      description: 'Cost of Advertising',
+      descriptionLower: 'cost of advertising',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -18,
+    }),
+    createMockTransaction('AU', 'Amazon.com.au', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'AU-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      vat: 8,
+      total: 68,
+    }),
+  ],
+  AE: [
+    createMockTransaction('AE', 'Amazon.ae', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'AE-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      vat: 5,
+      total: 80,
+      postalCode: '00000',
+    }),
+    createMockTransaction('AE', 'Amazon.ae', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'AE-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      vat: -2.5,
+      total: -42.5,
+      quantity: -1,
+    }),
+    createMockTransaction('AE', 'Amazon.ae', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'AE-AD-001',
+      description: 'Cost of Advertising',
+      descriptionLower: 'cost of advertising',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -16,
+    }),
+    createMockTransaction('AE', 'Amazon.ae', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'AE-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      vat: 4,
+      total: 68,
+    }),
+  ],
+  SA: [
+    createMockTransaction('SA', 'Amazon.sa', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'SA-ORDER-001',
+      fulfillment: 'FBA',
+      productSales: 100,
+      sellingFees: -15,
+      fbaFees: -5,
+      vat: 15,
+      total: 80,
+      postalCode: '00000',
+    }),
+    createMockTransaction('SA', 'Amazon.sa', {
+      type: 'Refund',
+      categoryType: 'Refund',
+      orderId: 'SA-REFUND-001',
+      fulfillment: 'FBA',
+      productSales: -50,
+      sellingFees: 7.5,
+      fbaFees: 2.5,
+      vat: -7.5,
+      total: -47.5,
+      quantity: -1,
+    }),
+    createMockTransaction('SA', 'Amazon.sa', {
+      type: 'Service Fee',
+      categoryType: 'Service Fee',
+      orderId: 'SA-AD-001',
+      description: 'Cost of Advertising',
+      descriptionLower: 'cost of advertising',
+      sellingFees: 0,
+      fbaFees: 0,
+      productSales: 0,
+      total: -17,
+    }),
+    createMockTransaction('SA', 'Amazon.sa', {
+      type: 'Order',
+      categoryType: 'Order',
+      orderId: 'SA-ORDER-002',
+      fulfillment: 'FBM',
+      productSales: 80,
+      sellingFees: -12,
+      fbaFees: 0,
+      vat: 12,
+      total: 68,
+    }),
+  ],
+};
+
+// Quick access to all marketplaces
+export const ALL_MARKETPLACES: MarketplaceCode[] = Object.keys(MOCK_TRANSACTIONS) as MarketplaceCode[];
