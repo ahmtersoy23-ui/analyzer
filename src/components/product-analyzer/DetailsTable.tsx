@@ -6,6 +6,7 @@ import React, { useState, useMemo } from 'react';
 import { Tag } from 'lucide-react';
 import { formatPercent } from '../../utils/formatters';
 import { ComparisonBadge } from '../shared/ComparisonBadge';
+import { SortableHeader } from '../shared/SortableHeader';
 import { calculateParentAnalytics, calculateCategoryAnalytics } from '../../services/analytics/productAnalytics';
 import { ProductDetailModal } from './ProductDetailModal';
 
@@ -233,54 +234,14 @@ export const DetailsTable: React.FC<DetailsTableProps> = ({
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
-                <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition"
-                  onClick={() => onSort('category')}
-                >
-                  <div className="flex items-center gap-1">
-                    Category
-                    {sortColumn === 'category' && (
-                      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
-                <th
-                  className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition"
-                  onClick={() => onSort('totalSales')}
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    Sales
-                    {sortColumn === 'totalSales' && (
-                      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
+                <SortableHeader column="category" label="Category" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} />
+                <SortableHeader column="totalSales" label="Sales" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
                 {comparisonMode !== 'none' && (
                   <th className="px-3 py-2 text-center text-xs font-semibold text-slate-700 min-w-[80px]">Change</th>
                 )}
-                <th
-                  className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition"
-                  onClick={() => onSort('totalOrders')}
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    Orders
-                    {sortColumn === 'totalOrders' && (
-                      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
+                <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
                 <th className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Quantity</th>
-                <th
-                  className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition"
-                  onClick={() => onSort('totalProducts')}
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    Products
-                    {sortColumn === 'totalProducts' && (
-                      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
+                <SortableHeader column="totalProducts" label="Products" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
                 <th className="px-3 py-2 text-right text-xs font-semibold text-slate-700">FBA Fee</th>
                 <th className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Selling Fee</th>
                 <th className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Refund Loss</th>
@@ -570,65 +531,15 @@ export const DetailsTable: React.FC<DetailsTableProps> = ({
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
-                <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition"
-                  onClick={() => onSort('parent')}
-                >
-                  <div className="flex items-center gap-1">
-                    Parent ASIN
-                    {sortColumn === 'parent' && (
-                      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
-                <th
-                  className="px-3 py-2 text-left text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition"
-                  onClick={() => onSort('category')}
-                >
-                  <div className="flex items-center gap-1">
-                    Category
-                    {sortColumn === 'category' && (
-                      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
-                <th
-                  className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition"
-                  onClick={() => onSort('totalSales')}
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    Sales
-                    {sortColumn === 'totalSales' && (
-                      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
+                <SortableHeader column="parent" label="Parent ASIN" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} />
+                <SortableHeader column="category" label="Category" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} />
+                <SortableHeader column="totalSales" label="Sales" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
                 {comparisonMode !== 'none' && (
                   <th className="px-3 py-2 text-center text-xs font-semibold text-slate-700 min-w-[80px]">Change</th>
                 )}
-                <th
-                  className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition"
-                  onClick={() => onSort('totalOrders')}
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    Orders
-                    {sortColumn === 'totalOrders' && (
-                      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
+                <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
                 <th className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Quantity</th>
-                <th
-                  className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition"
-                  onClick={() => onSort('totalProducts')}
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    Products
-                    {sortColumn === 'totalProducts' && (
-                      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
+                <SortableHeader column="totalProducts" label="Products" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
                 <th className="px-3 py-2 text-right text-xs font-semibold text-slate-700">FBA Fee</th>
                 <th className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Selling Fee</th>
                 <th className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Refund Loss</th>
