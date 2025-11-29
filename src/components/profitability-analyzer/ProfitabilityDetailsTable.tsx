@@ -7,6 +7,7 @@ import React, { useRef } from 'react';
 import { Tag } from 'lucide-react';
 import { formatPercent } from '../../utils/formatters';
 import { useProfitabilityFilters } from '../../contexts/ProfitabilityFilterContext';
+import { SortableHeader } from '../shared/SortableHeader';
 import type { SelectedItemType } from './PieChartModal';
 import type {
   SKUProfitAnalysis,
@@ -345,212 +346,32 @@ const SKUTable: React.FC<SKUTableProps> = ({
   onSort,
   onSelectItem,
 }) => {
-  const SortIndicator = ({ column }: { column: string }) => (
-    sortColumn === column ? (
-      <span className="text-green-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-    ) : null
-  );
-
   return (
     <table className="w-full min-w-max divide-y divide-slate-200 text-xs">
       <thead className="bg-slate-50 sticky top-0 z-20">
         <tr>
-          <th
-            className="px-3 py-2 text-left text-xs font-semibold text-slate-700 sticky left-0 bg-slate-50 z-30 cursor-pointer hover:bg-slate-100 min-w-[150px] border-r border-slate-200"
-            onClick={() => onSort('sku')}
-          >
-            <div className="flex items-center gap-1">
-              SKU
-              <SortIndicator column="sku" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap min-w-[200px]"
-            onClick={() => onSort('name')}
-          >
-            <div className="flex items-center gap-1">
-              Name
-              <SortIndicator column="name" />
-            </div>
-          </th>
+          <SortableHeader column="sku" label="SKU" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="green" className="sticky left-0 bg-slate-50 z-30 min-w-[150px] border-r border-slate-200" />
+          <SortableHeader column="name" label="Name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="green" className="min-w-[200px]" />
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200">FF</th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalRevenue')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Revenue
-              <SortIndicator column="totalRevenue" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalOrders')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Orders
-              <SortIndicator column="totalOrders" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalQuantity')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Qty
-              <SortIndicator column="totalQuantity" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('refundedQuantity')}
-            title="Refunded Quantity"
-          >
-            <div className="flex items-center justify-end gap-1">
-              RQty
-              <SortIndicator column="refundedQuantity" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('sellingFees')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Selling
-              <SortIndicator column="sellingFees" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('fbaFees')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBA Fee
-              <SortIndicator column="fbaFees" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('refundLoss')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Refund
-              <SortIndicator column="refundLoss" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('vat')}
-            title="VAT (EU marketplaces)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              VAT
-              <SortIndicator column="vat" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-pink-700 bg-pink-50 cursor-pointer hover:bg-pink-100 whitespace-nowrap"
-            onClick={() => onSort('advertisingCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Ads
-              <SortIndicator column="advertisingCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-indigo-700 bg-indigo-50 cursor-pointer hover:bg-indigo-100 whitespace-nowrap"
-            onClick={() => onSort('fbaCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBA Cost
-              <SortIndicator column="fbaCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-cyan-700 bg-cyan-50 cursor-pointer hover:bg-cyan-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('fbmCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBM Cost
-              <SortIndicator column="fbmCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('productCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Cost
-              <SortIndicator column="productCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('shippingCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Ship
-              <SortIndicator column="shippingCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-amber-700 bg-amber-50 cursor-pointer hover:bg-amber-100 whitespace-nowrap"
-            onClick={() => onSort('customsDuty')}
-            title="Gümrük Vergisi (FBM-TR)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              Customs
-              <SortIndicator column="customsDuty" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-amber-700 bg-amber-50 cursor-pointer hover:bg-amber-100 whitespace-nowrap"
-            onClick={() => onSort('ddpFee')}
-            title="DDP Ücreti (FBM-TR)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              DDP
-              <SortIndicator column="ddpFee" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-amber-700 bg-amber-50 cursor-pointer hover:bg-amber-100 whitespace-nowrap"
-            onClick={() => onSort('warehouseCost')}
-            title="Depo+İşçilik (FBA veya FBM-Local)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              Warehouse
-              <SortIndicator column="warehouseCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-orange-700 bg-orange-50 cursor-pointer hover:bg-orange-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('gstCost')}
-            title="GST/VAT (AU vb.)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              GST
-              <SortIndicator column="gstCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-green-700 bg-green-50 cursor-pointer hover:bg-green-100 whitespace-nowrap"
-            onClick={() => onSort('netProfit')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Net Profit
-              <SortIndicator column="netProfit" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-green-700 bg-green-50 cursor-pointer hover:bg-green-100 whitespace-nowrap"
-            onClick={() => onSort('profitMargin')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Margin
-              <SortIndicator column="profitMargin" />
-            </div>
-          </th>
+          <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" />
+          <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" />
+          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" />
+          <SortableHeader column="refundedQuantity" label="RQty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="border-r border-slate-200" />
+          <SortableHeader column="sellingFees" label="Selling" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-red-50" />
+          <SortableHeader column="fbaFees" label="FBA Fee" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-red-50" />
+          <SortableHeader column="refundLoss" label="Refund" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-red-50" />
+          <SortableHeader column="vat" label="VAT" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-red-50 border-r border-slate-200" />
+          <SortableHeader column="advertisingCost" label="Ads" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-pink-50" />
+          <SortableHeader column="fbaCost" label="FBA Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-indigo-50" />
+          <SortableHeader column="fbmCost" label="FBM Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-cyan-50 border-r border-slate-200" />
+          <SortableHeader column="productCost" label="Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" />
+          <SortableHeader column="shippingCost" label="Ship" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" />
+          <SortableHeader column="customsDuty" label="Customs" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-amber-50" />
+          <SortableHeader column="ddpFee" label="DDP" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-amber-50" />
+          <SortableHeader column="warehouseCost" label="Warehouse" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-amber-50" />
+          <SortableHeader column="gstCost" label="GST" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-orange-50 border-r border-slate-200" />
+          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-green-50" />
+          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-green-50" />
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -775,153 +596,27 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
   onSort,
   onSelectItem,
 }) => {
-  const SortIndicator = ({ column }: { column: string }) => (
-    sortColumn === column ? (
-      <span className="text-amber-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-    ) : null
-  );
-
   return (
     <table className="w-full min-w-max divide-y divide-slate-200 text-xs">
       <thead className="bg-slate-50 sticky top-0 z-20">
         <tr>
-          <th
-            className="px-3 py-2 text-left text-xs font-semibold text-slate-700 sticky left-0 bg-slate-50 z-30 cursor-pointer hover:bg-slate-100 min-w-[200px] border-r border-slate-200"
-            onClick={() => onSort('category')}
-          >
-            <div className="flex items-center gap-1">
-              Category
-              <SortIndicator column="category" />
-            </div>
-          </th>
+          <SortableHeader column="category" label="Category" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="amber" className="sticky left-0 bg-slate-50 z-30 min-w-[200px] border-r border-slate-200" />
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap">#Parents</th>
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200">#Products</th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalRevenue')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Revenue
-              <SortIndicator column="totalRevenue" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalOrders')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Orders
-              <SortIndicator column="totalOrders" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('totalQuantity')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Qty
-              <SortIndicator column="totalQuantity" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('sellingFees')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Selling
-              <SortIndicator column="sellingFees" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('fbaFees')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBA Fee
-              <SortIndicator column="fbaFees" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('refundLoss')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Refund
-              <SortIndicator column="refundLoss" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('vat')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              VAT
-              <SortIndicator column="vat" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-pink-700 bg-pink-50 cursor-pointer hover:bg-pink-100 whitespace-nowrap"
-            onClick={() => onSort('advertisingCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Ads
-              <SortIndicator column="advertisingCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-indigo-700 bg-indigo-50 cursor-pointer hover:bg-indigo-100 whitespace-nowrap"
-            onClick={() => onSort('fbaCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBA Cost
-              <SortIndicator column="fbaCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-cyan-700 bg-cyan-50 cursor-pointer hover:bg-cyan-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('fbmCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBM Cost
-              <SortIndicator column="fbmCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalProductCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Cost
-              <SortIndicator column="totalProductCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('shippingCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Ship
-              <SortIndicator column="shippingCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-green-700 bg-green-50 cursor-pointer hover:bg-green-100 whitespace-nowrap"
-            onClick={() => onSort('netProfit')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Net Profit
-              <SortIndicator column="netProfit" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-green-700 bg-green-50 cursor-pointer hover:bg-green-100 whitespace-nowrap"
-            onClick={() => onSort('profitMargin')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Margin
-              <SortIndicator column="profitMargin" />
-            </div>
-          </th>
+          <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" />
+          <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" />
+          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="border-r border-slate-200" />
+          <SortableHeader column="sellingFees" label="Selling" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-red-50" />
+          <SortableHeader column="fbaFees" label="FBA Fee" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-red-50" />
+          <SortableHeader column="refundLoss" label="Refund" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-red-50" />
+          <SortableHeader column="vat" label="VAT" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-red-50 border-r border-slate-200" />
+          <SortableHeader column="advertisingCost" label="Ads" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-pink-50" />
+          <SortableHeader column="fbaCost" label="FBA Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-indigo-50" />
+          <SortableHeader column="fbmCost" label="FBM Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-cyan-50 border-r border-slate-200" />
+          <SortableHeader column="totalProductCost" label="Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" />
+          <SortableHeader column="shippingCost" label="Ship" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="border-r border-slate-200" />
+          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-green-50" />
+          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-green-50" />
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -1016,153 +711,27 @@ const ParentTable: React.FC<ParentTableProps> = ({
   onSort,
   onSelectItem,
 }) => {
-  const SortIndicator = ({ column }: { column: string }) => (
-    sortColumn === column ? (
-      <span className="text-purple-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-    ) : null
-  );
-
   return (
     <table className="w-full min-w-max divide-y divide-slate-200 text-xs">
       <thead className="bg-slate-50 sticky top-0 z-20">
         <tr>
-          <th
-            className="px-3 py-2 text-left text-xs font-semibold text-slate-700 sticky left-0 bg-slate-50 z-30 cursor-pointer hover:bg-slate-100 min-w-[150px] border-r border-slate-200"
-            onClick={() => onSort('parent')}
-          >
-            <div className="flex items-center gap-1">
-              Parent ASIN
-              <SortIndicator column="parent" />
-            </div>
-          </th>
+          <SortableHeader column="parent" label="Parent ASIN" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="purple" className="sticky left-0 bg-slate-50 z-30 min-w-[150px] border-r border-slate-200" />
           <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap">Category</th>
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200">#Products</th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalRevenue')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Revenue
-              <SortIndicator column="totalRevenue" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalOrders')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Orders
-              <SortIndicator column="totalOrders" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('totalQuantity')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Qty
-              <SortIndicator column="totalQuantity" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('sellingFees')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Selling
-              <SortIndicator column="sellingFees" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('fbaFees')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBA Fee
-              <SortIndicator column="fbaFees" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('refundLoss')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Refund
-              <SortIndicator column="refundLoss" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('vat')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              VAT
-              <SortIndicator column="vat" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-pink-700 bg-pink-50 cursor-pointer hover:bg-pink-100 whitespace-nowrap"
-            onClick={() => onSort('advertisingCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Ads
-              <SortIndicator column="advertisingCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-indigo-700 bg-indigo-50 cursor-pointer hover:bg-indigo-100 whitespace-nowrap"
-            onClick={() => onSort('fbaCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBA Cost
-              <SortIndicator column="fbaCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-cyan-700 bg-cyan-50 cursor-pointer hover:bg-cyan-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('fbmCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBM Cost
-              <SortIndicator column="fbmCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalProductCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Cost
-              <SortIndicator column="totalProductCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('shippingCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Ship
-              <SortIndicator column="shippingCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-green-700 bg-green-50 cursor-pointer hover:bg-green-100 whitespace-nowrap"
-            onClick={() => onSort('netProfit')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Net Profit
-              <SortIndicator column="netProfit" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-green-700 bg-green-50 cursor-pointer hover:bg-green-100 whitespace-nowrap"
-            onClick={() => onSort('profitMargin')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Margin
-              <SortIndicator column="profitMargin" />
-            </div>
-          </th>
+          <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
+          <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
+          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="border-r border-slate-200" />
+          <SortableHeader column="sellingFees" label="Selling" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50" />
+          <SortableHeader column="fbaFees" label="FBA Fee" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50" />
+          <SortableHeader column="refundLoss" label="Refund" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50" />
+          <SortableHeader column="vat" label="VAT" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50 border-r border-slate-200" />
+          <SortableHeader column="advertisingCost" label="Ads" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-pink-50" />
+          <SortableHeader column="fbaCost" label="FBA Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-indigo-50" />
+          <SortableHeader column="fbmCost" label="FBM Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-cyan-50 border-r border-slate-200" />
+          <SortableHeader column="totalProductCost" label="Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
+          <SortableHeader column="shippingCost" label="Ship" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="border-r border-slate-200" />
+          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50" />
+          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50" />
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -1263,203 +832,31 @@ const ProductTable: React.FC<ProductTableProps> = ({
   onSort,
   onSelectItem,
 }) => {
-  const SortIndicator = ({ column }: { column: string }) => (
-    sortColumn === column ? (
-      <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-    ) : null
-  );
-
   return (
     <table className="w-full min-w-max divide-y divide-slate-200 text-xs">
       <thead className="bg-slate-50 sticky top-0 z-20">
         <tr>
-          <th
-            className="px-3 py-2 text-left text-xs font-semibold text-slate-700 sticky left-0 bg-slate-50 z-30 cursor-pointer hover:bg-slate-100 min-w-[200px] border-r border-slate-200"
-            onClick={() => onSort('name')}
-          >
-            <div className="flex items-center gap-1">
-              Product Name
-              <SortIndicator column="name" />
-            </div>
-          </th>
+          <SortableHeader column="name" label="Product Name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="blue" className="sticky left-0 bg-slate-50 z-30 min-w-[200px] border-r border-slate-200" />
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200">FF</th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalRevenue')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Revenue
-              <SortIndicator column="totalRevenue" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalOrders')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Orders
-              <SortIndicator column="totalOrders" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('totalQuantity')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Qty
-              <SortIndicator column="totalQuantity" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('refundedQuantity')}
-            title="Refunded Quantity"
-          >
-            <div className="flex items-center justify-end gap-1">
-              RQty
-              <SortIndicator column="refundedQuantity" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('sellingFees')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Selling
-              <SortIndicator column="sellingFees" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('fbaFees')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBA Fee
-              <SortIndicator column="fbaFees" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap"
-            onClick={() => onSort('refundLoss')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Refund
-              <SortIndicator column="refundLoss" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-red-700 bg-red-50 cursor-pointer hover:bg-red-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('vat')}
-            title="VAT (EU marketplaces)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              VAT
-              <SortIndicator column="vat" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-pink-700 bg-pink-50 cursor-pointer hover:bg-pink-100 whitespace-nowrap"
-            onClick={() => onSort('advertisingCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Ads
-              <SortIndicator column="advertisingCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-indigo-700 bg-indigo-50 cursor-pointer hover:bg-indigo-100 whitespace-nowrap"
-            onClick={() => onSort('fbaCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBA Cost
-              <SortIndicator column="fbaCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-cyan-700 bg-cyan-50 cursor-pointer hover:bg-cyan-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('fbmCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              FBM Cost
-              <SortIndicator column="fbmCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('productCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Cost
-              <SortIndicator column="productCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-            onClick={() => onSort('shippingCost')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Ship
-              <SortIndicator column="shippingCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-amber-700 bg-amber-50 cursor-pointer hover:bg-amber-100 whitespace-nowrap"
-            onClick={() => onSort('customsDuty')}
-            title="Gümrük Vergisi (FBM-TR)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              Customs
-              <SortIndicator column="customsDuty" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-amber-700 bg-amber-50 cursor-pointer hover:bg-amber-100 whitespace-nowrap"
-            onClick={() => onSort('ddpFee')}
-            title="DDP Ücreti (FBM-TR)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              DDP
-              <SortIndicator column="ddpFee" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-amber-700 bg-amber-50 cursor-pointer hover:bg-amber-100 whitespace-nowrap"
-            onClick={() => onSort('warehouseCost')}
-            title="Depo+İşçilik (FBA veya FBM-Local)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              Warehouse
-              <SortIndicator column="warehouseCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-orange-700 bg-orange-50 cursor-pointer hover:bg-orange-100 whitespace-nowrap border-r border-slate-200"
-            onClick={() => onSort('gstCost')}
-            title="GST/VAT (AU vb.)"
-          >
-            <div className="flex items-center justify-end gap-1">
-              GST
-              <SortIndicator column="gstCost" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-green-700 bg-green-50 cursor-pointer hover:bg-green-100 whitespace-nowrap"
-            onClick={() => onSort('netProfit')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Net Profit
-              <SortIndicator column="netProfit" />
-            </div>
-          </th>
-          <th
-            className="px-3 py-2 text-right text-xs font-semibold text-green-700 bg-green-50 cursor-pointer hover:bg-green-100 whitespace-nowrap"
-            onClick={() => onSort('profitMargin')}
-          >
-            <div className="flex items-center justify-end gap-1">
-              Margin
-              <SortIndicator column="profitMargin" />
-            </div>
-          </th>
+          <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" />
+          <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" />
+          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" />
+          <SortableHeader column="refundedQuantity" label="RQty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="border-r border-slate-200" />
+          <SortableHeader column="sellingFees" label="Selling" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-red-50" />
+          <SortableHeader column="fbaFees" label="FBA Fee" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-red-50" />
+          <SortableHeader column="refundLoss" label="Refund" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-red-50" />
+          <SortableHeader column="vat" label="VAT" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-red-50 border-r border-slate-200" />
+          <SortableHeader column="advertisingCost" label="Ads" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-pink-50" />
+          <SortableHeader column="fbaCost" label="FBA Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-indigo-50" />
+          <SortableHeader column="fbmCost" label="FBM Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-cyan-50 border-r border-slate-200" />
+          <SortableHeader column="productCost" label="Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" />
+          <SortableHeader column="shippingCost" label="Ship" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" />
+          <SortableHeader column="customsDuty" label="Customs" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-amber-50" />
+          <SortableHeader column="ddpFee" label="DDP" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-amber-50" />
+          <SortableHeader column="warehouseCost" label="Warehouse" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-amber-50" />
+          <SortableHeader column="gstCost" label="GST" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-orange-50 border-r border-slate-200" />
+          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-green-50" />
+          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-green-50" />
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
