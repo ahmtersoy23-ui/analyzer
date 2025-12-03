@@ -3,8 +3,9 @@
  * Displays SKU, Product, Parent, and Category level profitability data
  */
 
-import React, { useRef } from 'react';
-import { Tag } from 'lucide-react';
+import React, { useRef, useCallback, useState } from 'react';
+import { Tag, Download, ChevronRight } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { formatPercent } from '../../utils/formatters';
 import { useProfitabilityFilters } from '../../contexts/ProfitabilityFilterContext';
 import { SortableHeader } from '../shared/SortableHeader';
@@ -26,6 +27,8 @@ interface ProfitabilityDetailsTableProps {
   productNames: string[];
   formatMoney: (amount: number) => string;
   onSelectItem: (item: SelectedItemType | null) => void;
+  totalCatalogProducts: number;
+  productsWithSales: number;
 }
 
 export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps> = ({
@@ -38,9 +41,15 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
   productNames,
   formatMoney,
   onSelectItem,
+  totalCatalogProducts,
+  productsWithSales,
 }) => {
   // Get filter state from context
   const {
+    startDate,
+    endDate,
+    filterMarketplace,
+    filterFulfillment,
     filterCategory,
     filterParent,
     filterName,
@@ -58,6 +67,9 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
     setCurrentPage,
     handleSort,
   } = useProfitabilityFilters();
+
+  // Collapse state
+  const [isExpanded, setIsExpanded] = useState(true);
 
   // Drag-to-scroll state using ref (not state to avoid re-renders)
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -94,14 +106,261 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
     tableContainerRef.current.style.cursor = 'grab';
   };
 
+  // Generate filename based on filters
+  const generateFileName = useCallback(() => {
+    const parts = ['Faz3', 'Details'];
+
+    // Add view mode
+    const viewModeLabels: Record<string, string> = {
+      'sku': 'SKU',
+      'name': 'Product',
+      'parent': 'Parent',
+      'category': 'Category'
+    };
+    parts.push(viewModeLabels[detailsViewMode] || detailsViewMode);
+
+    // Add filters
+    if (filterMarketplace !== 'all') parts.push(filterMarketplace);
+    if (filterFulfillment !== 'all') parts.push(filterFulfillment);
+    if (startDate) parts.push(startDate.replace(/-/g, ''));
+    if (endDate) parts.push(endDate.replace(/-/g, ''));
+
+    return parts.join('_') + '.xlsx';
+  }, [detailsViewMode, filterMarketplace, filterFulfillment, startDate, endDate]);
+
+  // Export to Excel
+  const handleExportExcel = useCallback(() => {
+    let data: any[] = [];
+    let sheetName = 'Data';
+
+    if (detailsViewMode === 'sku') {
+      sheetName = 'SKUs';
+      data = displaySkus.map(sku => ({
+        'SKU': sku.sku,
+        'Name': sku.name,
+        'Category': sku.category,
+        'Fulfillment': sku.fulfillment,
+        'Revenue': sku.totalRevenue,
+        'Net Profit': sku.netProfit,
+        'Margin %': sku.profitMargin,
+        'Orders': sku.totalOrders,
+        'Quantity': sku.totalQuantity,
+        'Refunded Qty': sku.refundedQuantity,
+        'Selling Fee': sku.sellingFees,
+        'Selling Fee %': sku.sellingFeePercent,
+        'FBA Fee': sku.fbaFees,
+        'FBA Fee %': sku.fbaFeePercent,
+        'Refund Loss': sku.refundLoss,
+        'Refund Loss %': sku.refundLossPercent,
+        'VAT': sku.vat,
+        'VAT %': sku.vatPercent,
+        'Ads': sku.advertisingCost,
+        'Ads %': sku.advertisingPercent,
+        'FBA Cost': sku.fbaCost,
+        'FBA Cost %': sku.fbaCostPercent,
+        'FBM Cost': sku.fbmCost,
+        'FBM Cost %': sku.fbmCostPercent,
+        'Product Cost': sku.totalProductCost,
+        'Product Cost %': sku.productCostPercent,
+        'Shipping Cost': sku.shippingCost,
+        'Shipping Cost %': sku.shippingCostPercent,
+      }));
+    } else if (detailsViewMode === 'name') {
+      sheetName = 'Products';
+      data = displayProducts.map(p => ({
+        'Name': p.name,
+        'Category': p.category,
+        'Fulfillment': p.fulfillment,
+        'Revenue': p.totalRevenue,
+        'Net Profit': p.netProfit,
+        'Margin %': p.profitMargin,
+        'Orders': p.totalOrders,
+        'Quantity': p.totalQuantity,
+        'Refunded Qty': p.refundedQuantity,
+        'Selling Fee': p.sellingFees,
+        'Selling Fee %': p.sellingFeePercent,
+        'FBA Fee': p.fbaFees,
+        'FBA Fee %': p.fbaFeePercent,
+        'Refund Loss': p.refundLoss,
+        'Refund Loss %': p.refundLossPercent,
+        'VAT': p.vat,
+        'VAT %': p.vatPercent,
+        'Ads': p.advertisingCost,
+        'Ads %': p.advertisingPercent,
+        'FBA Cost': p.fbaCost,
+        'FBA Cost %': p.fbaCostPercent,
+        'FBM Cost': p.fbmCost,
+        'FBM Cost %': p.fbmCostPercent,
+        'Product Cost': p.totalProductCost,
+        'Product Cost %': p.productCostPercent,
+        'Shipping Cost': p.shippingCost,
+        'Shipping Cost %': p.shippingCostPercent,
+      }));
+    } else if (detailsViewMode === 'parent') {
+      sheetName = 'Parents';
+      data = displayParents.map(par => ({
+        'Parent ASIN': par.parent,
+        'Category': par.category,
+        'Products': par.totalProducts,
+        'Revenue': par.totalRevenue,
+        'Net Profit': par.netProfit,
+        'Margin %': par.profitMargin,
+        'Orders': par.totalOrders,
+        'Quantity': par.totalQuantity,
+        'Selling Fee': par.sellingFees,
+        'FBA Fee': par.fbaFees,
+        'Refund Loss': par.refundLoss,
+        'VAT': par.vat,
+        'Ads': par.advertisingCost,
+        'FBA Cost': par.fbaCost,
+        'FBM Cost': par.fbmCost,
+        'Product Cost': par.totalProductCost,
+        'Shipping Cost': par.shippingCost,
+      }));
+    } else {
+      sheetName = 'Categories';
+      data = displayCategories.map(cat => ({
+        'Category': cat.category,
+        'Parents': cat.totalParents,
+        'Products': cat.totalProducts,
+        'Revenue': cat.totalRevenue,
+        'Net Profit': cat.netProfit,
+        'Margin %': cat.profitMargin,
+        'Orders': cat.totalOrders,
+        'Quantity': cat.totalQuantity,
+        'Selling Fee': cat.sellingFees,
+        'FBA Fee': cat.fbaFees,
+        'Refund Loss': cat.refundLoss,
+        'VAT': cat.vat,
+        'Ads': cat.advertisingCost,
+        'FBA Cost': cat.fbaCost,
+        'FBM Cost': cat.fbmCost,
+        'Product Cost': cat.totalProductCost,
+        'Shipping Cost': cat.shippingCost,
+      }));
+    }
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, generateFileName());
+  }, [detailsViewMode, displaySkus, displayProducts, displayParents, displayCategories, generateFileName]);
+
+  // Get item count for collapsed summary
+  const getItemCount = () => {
+    switch (detailsViewMode) {
+      case 'sku': return displaySkus.length;
+      case 'name': return displayProducts.length;
+      case 'parent': return displayParents.length;
+      case 'category': return displayCategories.length;
+      default: return 0;
+    }
+  };
+
+  const viewModeLabels: Record<string, string> = {
+    'sku': 'SKUs',
+    'name': 'Products',
+    'parent': 'Parents',
+    'category': 'Categories'
+  };
+
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+      {/* Collapsible Header */}
+      <div
+        className="flex items-center justify-between cursor-pointer hover:bg-slate-50 -mx-6 -mt-6 px-6 py-4 rounded-t-xl transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+          <Tag className="w-5 h-5 text-indigo-600" />
+          Details
+          <ChevronRight className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+          {totalCatalogProducts > 0 && (
+            <span className="text-sm font-normal text-slate-500 ml-2">
+              {productsWithSales}/{totalCatalogProducts} products with sales
+            </span>
+          )}
+        </h2>
         <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <Tag className="w-5 h-5 text-indigo-600" />
-            Details
-          </h2>
+          {/* Filter Info Display */}
+          <div className="text-sm text-slate-600">
+            {filterMarketplace !== 'all' && <span className="font-medium">{filterMarketplace}</span>}
+            {filterMarketplace !== 'all' && (startDate || endDate || filterFulfillment !== 'all') && <span className="mx-2">•</span>}
+            {(startDate || endDate) && (
+              <span>
+                {startDate && new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                {startDate && endDate && ' - '}
+                {endDate && new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            )}
+            {(startDate || endDate) && filterFulfillment !== 'all' && <span className="mx-2">•</span>}
+            {filterFulfillment !== 'all' && <span className="font-medium">{filterFulfillment}</span>}
+            {filterMarketplace === 'all' && !startDate && !endDate && filterFulfillment === 'all' && (
+              <span className="text-slate-400">All data</span>
+            )}
+          </div>
+          {/* Summary when collapsed */}
+          {!isExpanded && (
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-slate-600">{getItemCount()} {viewModeLabels[detailsViewMode]}</span>
+              <span className={`font-medium ${
+                detailsViewMode === 'sku' ? 'text-green-600' :
+                detailsViewMode === 'name' ? 'text-blue-600' :
+                detailsViewMode === 'parent' ? 'text-purple-600' : 'text-amber-600'
+              }`}>{viewModeLabels[detailsViewMode]} view</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="pt-4">
+      {/* Toggle & Export Row */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          {/* SKU/Name/Parent/Category Segmented Control - Bottom-up hierarchy */}
+          <div className="inline-flex rounded-lg border border-slate-300 p-1 bg-slate-50">
+            <button
+              onClick={() => setDetailsViewMode('sku')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                detailsViewMode === 'sku'
+                  ? 'bg-green-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              SKU
+            </button>
+            <button
+              onClick={() => setDetailsViewMode('name')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                detailsViewMode === 'name'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              Product
+            </button>
+            <button
+              onClick={() => setDetailsViewMode('parent')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                detailsViewMode === 'parent'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              Parent
+            </button>
+            <button
+              onClick={() => setDetailsViewMode('category')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                detailsViewMode === 'category'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              Category
+            </button>
+          </div>
           {/* Toplam / Birim Toggle - Sadece SKU ve Name için */}
           {(detailsViewMode === 'sku' || detailsViewMode === 'name') && (
             <div className="inline-flex items-center rounded-full bg-slate-100 p-0.5 text-xs">
@@ -128,49 +387,14 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
             </div>
           )}
         </div>
-        {/* SKU/Name/Parent/Category Segmented Control - Bottom-up hierarchy */}
-        <div className="inline-flex rounded-lg border border-slate-300 p-1 bg-slate-50">
-          <button
-            onClick={() => setDetailsViewMode('sku')}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              detailsViewMode === 'sku'
-                ? 'bg-green-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-          >
-            SKU
-          </button>
-          <button
-            onClick={() => setDetailsViewMode('name')}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              detailsViewMode === 'name'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-          >
-            Product
-          </button>
-          <button
-            onClick={() => setDetailsViewMode('parent')}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              detailsViewMode === 'parent'
-                ? 'bg-purple-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-          >
-            Parent
-          </button>
-          <button
-            onClick={() => setDetailsViewMode('category')}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              detailsViewMode === 'category'
-                ? 'bg-amber-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-          >
-            Category
-          </button>
-        </div>
+        <button
+          onClick={handleExportExcel}
+          className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg flex items-center gap-1.5 transition-colors"
+          title="Export to Excel"
+        >
+          <Download className="w-4 h-4" />
+          Export
+        </button>
       </div>
 
       {/* Filter dropdowns */}
@@ -247,6 +471,7 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
             formatMoney={formatMoney}
             onSort={handleSort}
             onSelectItem={onSelectItem}
+            showCountry={true}
           />
         ) : detailsViewMode === 'category' ? (
           <CategoryTable
@@ -316,6 +541,8 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
           </div>
         </div>
       )}
+        </div>
+      )}
     </div>
   );
 };
@@ -333,7 +560,24 @@ interface SKUTableProps {
   formatMoney: (amount: number) => string;
   onSort: (column: string) => void;
   onSelectItem: (item: SelectedItemType | null) => void;
+  showCountry?: boolean;
 }
+
+// Country flags mapping
+const COUNTRY_FLAGS: Record<string, string> = {
+  US: '🇺🇸',
+  UK: '🇬🇧',
+  DE: '🇩🇪',
+  FR: '🇫🇷',
+  IT: '🇮🇹',
+  ES: '🇪🇸',
+  CA: '🇨🇦',
+  AU: '🇦🇺',
+  AE: '🇦🇪',
+  SA: '🇸🇦',
+  SG: '🇸🇬',
+  TR: '🇹🇷',
+};
 
 const SKUTable: React.FC<SKUTableProps> = ({
   displaySkus,
@@ -345,6 +589,7 @@ const SKUTable: React.FC<SKUTableProps> = ({
   formatMoney,
   onSort,
   onSelectItem,
+  showCountry = false,
 }) => {
   return (
     <table className="w-full min-w-max divide-y divide-slate-200 text-xs">
@@ -352,8 +597,14 @@ const SKUTable: React.FC<SKUTableProps> = ({
         <tr>
           <SortableHeader column="sku" label="SKU" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="green" className="sticky left-0 bg-slate-50 z-30 min-w-[150px] border-r border-slate-200" />
           <SortableHeader column="name" label="Name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="green" className="min-w-[200px]" />
-          <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200">FF</th>
+          <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap">FF</th>
+          {showCountry && (
+            <SortableHeader column="marketplace" label="Country" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="center" color="green" className="border-r border-slate-200" />
+          )}
+          {!showCountry && <th className="border-r border-slate-200 w-0 p-0"></th>}
           <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" />
+          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-green-50" />
+          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-green-50 border-r border-slate-200" />
           <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" />
           <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" />
           <SortableHeader column="refundedQuantity" label="RQty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="border-r border-slate-200" />
@@ -369,9 +620,7 @@ const SKUTable: React.FC<SKUTableProps> = ({
           <SortableHeader column="customsDuty" label="Customs" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-amber-50" />
           <SortableHeader column="ddpFee" label="DDP" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-amber-50" />
           <SortableHeader column="warehouseCost" label="Warehouse" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-amber-50" />
-          <SortableHeader column="gstCost" label="GST" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-orange-50 border-r border-slate-200" />
-          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-green-50" />
-          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-green-50" />
+          <SortableHeader column="gstCost" label="GST" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-orange-50" />
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -379,7 +628,7 @@ const SKUTable: React.FC<SKUTableProps> = ({
           .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
           .map(sku => (
           <tr
-            key={sku.sku}
+            key={`${sku.sku}::${sku.marketplace || 'ALL'}`}
             className="hover:bg-slate-50"
           >
             <td
@@ -392,7 +641,7 @@ const SKUTable: React.FC<SKUTableProps> = ({
             <td className="px-3 py-2 text-left text-slate-700 text-xs min-w-[200px]">
               <div className="truncate max-w-[200px]" title={sku.name}>{sku.name}</div>
             </td>
-            <td className="px-3 py-2 text-center border-r border-slate-100">
+            <td className="px-3 py-2 text-center">
               <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                 sku.fulfillment === 'FBA'
                   ? 'bg-blue-100 text-blue-700'
@@ -403,10 +652,27 @@ const SKUTable: React.FC<SKUTableProps> = ({
                 {sku.fulfillment}
               </span>
             </td>
+            {showCountry && (
+              <td className="px-3 py-2 text-center border-r border-slate-100">
+                <span className="text-sm" title={sku.marketplace || 'Unknown'}>
+                  {COUNTRY_FLAGS[sku.marketplace || ''] || '🌍'}
+                </span>
+                <span className="ml-1 text-[10px] text-slate-500">{sku.marketplace || '?'}</span>
+              </td>
+            )}
+            {!showCountry && <td className="border-r border-slate-100 w-0 p-0"></td>}
             <td className="px-3 py-2 text-right font-semibold text-slate-800 whitespace-nowrap">
               {showPerUnit
                 ? formatMoney(sku.avgSalePrice)
                 : formatMoney(sku.totalRevenue)}
+            </td>
+            <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${sku.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {showPerUnit
+                ? formatMoney(sku.totalQuantity > 0 ? sku.netProfit / sku.totalQuantity : 0)
+                : formatMoney(sku.netProfit)}
+            </td>
+            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${sku.profitMargin >= 10 ? 'text-green-600' : sku.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+              {formatPercent(sku.profitMargin)}
             </td>
             <td className="px-3 py-2 text-right text-slate-600">{sku.totalOrders}</td>
             <td className="px-3 py-2 text-right text-slate-600">{sku.totalQuantity}</td>
@@ -561,14 +827,6 @@ const SKUTable: React.FC<SKUTableProps> = ({
                 <span className="text-slate-300">-</span>
               )}
             </td>
-            <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${sku.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {showPerUnit
-                ? formatMoney(sku.totalQuantity > 0 ? sku.netProfit / sku.totalQuantity : 0)
-                : formatMoney(sku.netProfit)}
-            </td>
-            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 whitespace-nowrap ${sku.profitMargin >= 10 ? 'text-green-600' : sku.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
-              {formatPercent(sku.profitMargin)}
-            </td>
           </tr>
         ))}
       </tbody>
@@ -596,6 +854,126 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
   onSort,
   onSelectItem,
 }) => {
+  // Calculate totals for All Categories row
+  const totals = displayCategories.reduce(
+    (acc, cat) => ({
+      totalRevenue: acc.totalRevenue + cat.totalRevenue,
+      totalOrders: acc.totalOrders + cat.totalOrders,
+      totalQuantity: acc.totalQuantity + cat.totalQuantity,
+      refundedQuantity: acc.refundedQuantity + cat.refundedQuantity,
+      totalProducts: acc.totalProducts + cat.totalProducts,
+      totalParents: acc.totalParents + cat.totalParents,
+      sellingFees: acc.sellingFees + cat.sellingFees,
+      fbaFees: acc.fbaFees + cat.fbaFees,
+      refundLoss: acc.refundLoss + cat.refundLoss,
+      vat: acc.vat + cat.vat,
+      advertisingCost: acc.advertisingCost + cat.advertisingCost,
+      fbaCost: acc.fbaCost + cat.fbaCost,
+      fbmCost: acc.fbmCost + cat.fbmCost,
+      totalProductCost: acc.totalProductCost + cat.totalProductCost,
+      shippingCost: acc.shippingCost + cat.shippingCost,
+      customsDuty: acc.customsDuty + cat.customsDuty,
+      ddpFee: acc.ddpFee + cat.ddpFee,
+      warehouseCost: acc.warehouseCost + cat.warehouseCost,
+      gstCost: acc.gstCost + cat.gstCost,
+      netProfit: acc.netProfit + cat.netProfit,
+      fbaRevenue: acc.fbaRevenue + cat.fbaRevenue,
+      fbmRevenue: acc.fbmRevenue + cat.fbmRevenue,
+    }),
+    {
+      totalRevenue: 0,
+      totalOrders: 0,
+      totalQuantity: 0,
+      refundedQuantity: 0,
+      totalProducts: 0,
+      totalParents: 0,
+      sellingFees: 0,
+      fbaFees: 0,
+      refundLoss: 0,
+      vat: 0,
+      advertisingCost: 0,
+      fbaCost: 0,
+      fbmCost: 0,
+      totalProductCost: 0,
+      shippingCost: 0,
+      customsDuty: 0,
+      ddpFee: 0,
+      warehouseCost: 0,
+      gstCost: 0,
+      netProfit: 0,
+      fbaRevenue: 0,
+      fbmRevenue: 0,
+    }
+  );
+
+  // Calculate percentages for All Categories
+  const allProfitMargin = totals.totalRevenue > 0 ? (totals.netProfit / totals.totalRevenue) * 100 : 0;
+  const allSellingFeePercent = totals.totalRevenue > 0 ? (totals.sellingFees / totals.totalRevenue) * 100 : 0;
+  const allFbaFeePercent = totals.fbaRevenue > 0 ? (totals.fbaFees / totals.fbaRevenue) * 100 : 0;
+  const allRefundLossPercent = totals.totalRevenue > 0 ? (totals.refundLoss / totals.totalRevenue) * 100 : 0;
+  const allVatPercent = totals.totalRevenue > 0 ? (totals.vat / totals.totalRevenue) * 100 : 0;
+  const allAdvertisingPercent = totals.totalRevenue > 0 ? (totals.advertisingCost / totals.totalRevenue) * 100 : 0;
+  const allFbaCostPercent = totals.fbaRevenue > 0 ? (totals.fbaCost / totals.fbaRevenue) * 100 : 0;
+  const allFbmCostPercent = totals.fbmRevenue > 0 ? (totals.fbmCost / totals.fbmRevenue) * 100 : 0;
+  const allProductCostPercent = totals.totalRevenue > 0 ? (totals.totalProductCost / totals.totalRevenue) * 100 : 0;
+  const allShippingCostPercent = totals.totalRevenue > 0 ? (totals.shippingCost / totals.totalRevenue) * 100 : 0;
+  const allCustomsDutyPercent = totals.totalRevenue > 0 ? (totals.customsDuty / totals.totalRevenue) * 100 : 0;
+  const allDdpFeePercent = totals.totalRevenue > 0 ? (totals.ddpFee / totals.totalRevenue) * 100 : 0;
+  const allWarehouseCostPercent = totals.totalRevenue > 0 ? (totals.warehouseCost / totals.totalRevenue) * 100 : 0;
+  const allGstCostPercent = totals.totalRevenue > 0 ? (totals.gstCost / totals.totalRevenue) * 100 : 0;
+
+  // Create All Categories data for pie chart
+  const allCategoriesData: CategoryProfitAnalysis = {
+    category: 'All Categories',
+    parents: [],
+    fulfillment: 'Mixed',
+    totalParents: totals.totalParents,
+    totalProducts: totals.totalProducts,
+    totalRevenue: totals.totalRevenue,
+    totalOrders: totals.totalOrders,
+    totalQuantity: totals.totalQuantity,
+    refundedQuantity: totals.refundedQuantity,
+    avgSalePrice: totals.totalQuantity > 0 ? totals.totalRevenue / totals.totalQuantity : 0,
+    fbaRevenue: totals.fbaRevenue,
+    fbmRevenue: totals.fbmRevenue,
+    fbaQuantity: 0,
+    fbmQuantity: 0,
+    sellingFees: totals.sellingFees,
+    fbaFees: totals.fbaFees,
+    refundLoss: totals.refundLoss,
+    vat: totals.vat,
+    totalAmazonFees: totals.sellingFees + totals.fbaFees + totals.refundLoss + totals.vat,
+    productCost: 0,
+    totalProductCost: totals.totalProductCost,
+    shippingCost: totals.shippingCost,
+    customsDuty: totals.customsDuty,
+    ddpFee: totals.ddpFee,
+    warehouseCost: totals.warehouseCost,
+    othersCost: 0,
+    gstCost: totals.gstCost,
+    advertisingCost: totals.advertisingCost,
+    fbaCost: totals.fbaCost,
+    fbmCost: totals.fbmCost,
+    grossProfit: totals.totalRevenue - totals.sellingFees - totals.fbaFees,
+    netProfit: totals.netProfit,
+    profitMargin: allProfitMargin,
+    roi: 0,
+    sellingFeePercent: allSellingFeePercent,
+    fbaFeePercent: allFbaFeePercent,
+    refundLossPercent: allRefundLossPercent,
+    vatPercent: allVatPercent,
+    productCostPercent: allProductCostPercent,
+    shippingCostPercent: allShippingCostPercent,
+    advertisingPercent: allAdvertisingPercent,
+    fbaCostPercent: allFbaCostPercent,
+    fbmCostPercent: allFbmCostPercent,
+    othersCostPercent: 0,
+    gstCostPercent: allGstCostPercent,
+    hasCostData: true,
+    hasSizeData: false,
+    topProducts: [],
+  };
+
   return (
     <table className="w-full min-w-max divide-y divide-slate-200 text-xs">
       <thead className="bg-slate-50 sticky top-0 z-20">
@@ -604,8 +982,11 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap">#Parents</th>
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200">#Products</th>
           <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" />
+          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-green-50" />
+          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-green-50 border-r border-slate-200" />
           <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" />
-          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="border-r border-slate-200" />
+          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" />
+          <SortableHeader column="refundedQuantity" label="RQty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="border-r border-slate-200" />
           <SortableHeader column="sellingFees" label="Selling" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-red-50" />
           <SortableHeader column="fbaFees" label="FBA Fee" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-red-50" />
           <SortableHeader column="refundLoss" label="Refund" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-red-50" />
@@ -614,12 +995,119 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
           <SortableHeader column="fbaCost" label="FBA Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-indigo-50" />
           <SortableHeader column="fbmCost" label="FBM Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-cyan-50 border-r border-slate-200" />
           <SortableHeader column="totalProductCost" label="Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" />
-          <SortableHeader column="shippingCost" label="Ship" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="border-r border-slate-200" />
-          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-green-50" />
-          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" className="bg-green-50" />
+          <SortableHeader column="shippingCost" label="Ship" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="amber" />
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">Customs</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">DDP</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">Warehouse</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-orange-50">GST</th>
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
+        {/* All Categories Summary Row */}
+        <tr className="hover:bg-indigo-50 bg-indigo-50/30 border-b-2 border-indigo-200">
+          <td
+            className="px-3 py-3 text-left sticky left-0 bg-indigo-50 z-10 min-w-[200px] border-r border-slate-200 cursor-pointer hover:bg-indigo-100"
+            onClick={() => onSelectItem({ type: 'category', data: allCategoriesData })}
+          >
+            <div className="font-bold text-indigo-700 text-sm">All Categories</div>
+            <div className="text-[10px] text-indigo-500">Click for breakdown</div>
+          </td>
+          <td className="px-3 py-3 text-center text-slate-600">{totals.totalParents}</td>
+          <td className="px-3 py-3 text-center text-slate-600 border-r border-slate-100">{totals.totalProducts}</td>
+          <td className="px-3 py-3 text-right font-bold text-indigo-700 whitespace-nowrap text-sm">{formatMoney(totals.totalRevenue)}</td>
+          <td className={`px-3 py-3 text-right font-bold bg-green-50/30 whitespace-nowrap text-sm ${totals.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {formatMoney(totals.netProfit)}
+          </td>
+          <td className={`px-3 py-3 text-right font-bold bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${allProfitMargin >= 10 ? 'text-green-600' : allProfitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+            {formatPercent(allProfitMargin)}
+          </td>
+          <td className="px-3 py-3 text-right text-slate-600">{totals.totalOrders}</td>
+          <td className="px-3 py-3 text-right text-slate-600">{totals.totalQuantity}</td>
+          <td className="px-3 py-3 text-right text-red-500 border-r border-slate-100">{totals.refundedQuantity > 0 ? totals.refundedQuantity : '-'}</td>
+          <td className="px-3 py-3 text-right bg-red-50/30 whitespace-nowrap">
+            <div className="text-red-600 font-medium">{formatPercent(allSellingFeePercent)}</div>
+            <div className="text-[10px] text-slate-400">{formatMoney(totals.sellingFees)}</div>
+          </td>
+          <td className="px-3 py-3 text-right bg-red-50/30 whitespace-nowrap">
+            <div className="text-red-600 font-medium">{formatPercent(allFbaFeePercent)}</div>
+            <div className="text-[10px] text-slate-400">{formatMoney(totals.fbaFees)}</div>
+          </td>
+          <td className="px-3 py-3 text-right bg-red-50/30 whitespace-nowrap">
+            <div className="text-red-600 font-medium">{formatPercent(allRefundLossPercent)}</div>
+            <div className="text-[10px] text-slate-400">{formatMoney(totals.refundLoss)}</div>
+          </td>
+          <td className="px-3 py-3 text-right bg-red-50/30 border-r border-slate-100 whitespace-nowrap">
+            {totals.vat > 0 ? (
+              <>
+                <div className="text-red-600 font-medium">{formatPercent(allVatPercent)}</div>
+                <div className="text-[10px] text-slate-400">{formatMoney(totals.vat)}</div>
+              </>
+            ) : (
+              <span className="text-slate-300">-</span>
+            )}
+          </td>
+          <td className="px-3 py-3 text-right bg-pink-50/30 whitespace-nowrap">
+            <div className="text-pink-600 font-medium">{formatPercent(allAdvertisingPercent)}</div>
+            <div className="text-[10px] text-slate-400">{formatMoney(totals.advertisingCost)}</div>
+          </td>
+          <td className="px-3 py-3 text-right bg-indigo-50/30 whitespace-nowrap">
+            <div className="text-indigo-600 font-medium">{formatPercent(allFbaCostPercent)}</div>
+            <div className="text-[10px] text-slate-400">{formatMoney(totals.fbaCost)}</div>
+          </td>
+          <td className="px-3 py-3 text-right bg-cyan-50/30 border-r border-slate-100 whitespace-nowrap">
+            <div className="text-cyan-600 font-medium">{formatPercent(allFbmCostPercent)}</div>
+            <div className="text-[10px] text-slate-400">{formatMoney(totals.fbmCost)}</div>
+          </td>
+          <td className="px-3 py-3 text-right whitespace-nowrap">
+            <div className="text-slate-800 font-medium">{formatMoney(totals.totalProductCost)}</div>
+            <div className="text-[10px] text-slate-400">{formatPercent(allProductCostPercent)}</div>
+          </td>
+          <td className="px-3 py-3 text-right whitespace-nowrap">
+            <div className="text-slate-800 font-medium">{formatMoney(totals.shippingCost)}</div>
+            <div className="text-[10px] text-slate-400">{formatPercent(allShippingCostPercent)}</div>
+          </td>
+          <td className="px-3 py-3 text-right bg-amber-50/30 whitespace-nowrap">
+            {totals.customsDuty > 0 ? (
+              <>
+                <div className="text-amber-700 font-medium">{formatPercent(allCustomsDutyPercent)}</div>
+                <div className="text-[10px] text-slate-400">{formatMoney(totals.customsDuty)}</div>
+              </>
+            ) : (
+              <span className="text-slate-300">-</span>
+            )}
+          </td>
+          <td className="px-3 py-3 text-right bg-amber-50/30 whitespace-nowrap">
+            {totals.ddpFee > 0 ? (
+              <>
+                <div className="text-amber-700 font-medium">{formatPercent(allDdpFeePercent)}</div>
+                <div className="text-[10px] text-slate-400">{formatMoney(totals.ddpFee)}</div>
+              </>
+            ) : (
+              <span className="text-slate-300">-</span>
+            )}
+          </td>
+          <td className="px-3 py-3 text-right bg-amber-50/30 whitespace-nowrap">
+            {totals.warehouseCost > 0 ? (
+              <>
+                <div className="text-amber-700 font-medium">{formatPercent(allWarehouseCostPercent)}</div>
+                <div className="text-[10px] text-slate-400">{formatMoney(totals.warehouseCost)}</div>
+              </>
+            ) : (
+              <span className="text-slate-300">-</span>
+            )}
+          </td>
+          <td className="px-3 py-3 text-right bg-orange-50/30 whitespace-nowrap">
+            {totals.gstCost > 0 ? (
+              <>
+                <div className="text-orange-600 font-medium">{formatPercent(allGstCostPercent)}</div>
+                <div className="text-[10px] text-slate-400">{formatMoney(totals.gstCost)}</div>
+              </>
+            ) : (
+              <span className="text-slate-300">-</span>
+            )}
+          </td>
+        </tr>
+        {/* Individual Category Rows */}
         {displayCategories.map(cat => (
           <tr
             key={cat.category}
@@ -634,8 +1122,15 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
             <td className="px-3 py-2 text-center text-slate-600">{cat.totalParents}</td>
             <td className="px-3 py-2 text-center text-slate-600 border-r border-slate-100">{cat.totalProducts}</td>
             <td className="px-3 py-2 text-right font-semibold text-slate-800 whitespace-nowrap">{formatMoney(cat.totalRevenue)}</td>
+            <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${cat.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatMoney(cat.netProfit)}
+            </td>
+            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${cat.profitMargin >= 10 ? 'text-green-600' : cat.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+              {formatPercent(cat.profitMargin)}
+            </td>
             <td className="px-3 py-2 text-right text-slate-600">{cat.totalOrders}</td>
-            <td className="px-3 py-2 text-right text-slate-600 border-r border-slate-100">{cat.totalQuantity}</td>
+            <td className="px-3 py-2 text-right text-slate-600">{cat.totalQuantity}</td>
+            <td className="px-3 py-2 text-right text-red-500 border-r border-slate-100">{cat.refundedQuantity > 0 ? cat.refundedQuantity : '-'}</td>
             <td className="px-3 py-2 text-right bg-red-50/30 whitespace-nowrap">
               <div className="text-red-600 font-medium">{formatPercent(cat.sellingFeePercent)}</div>
               <div className="text-[10px] text-slate-400">{formatMoney(cat.sellingFees)}</div>
@@ -674,15 +1169,49 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
               <div className="text-slate-800 font-medium">{formatMoney(cat.totalProductCost)}</div>
               <div className="text-[10px] text-slate-400">{formatPercent(cat.productCostPercent)}</div>
             </td>
-            <td className="px-3 py-2 text-right border-r border-slate-100 whitespace-nowrap">
+            <td className="px-3 py-2 text-right whitespace-nowrap">
               <div className="text-slate-800 font-medium">{formatMoney(cat.shippingCost)}</div>
               <div className="text-[10px] text-slate-400">{formatPercent(cat.shippingCostPercent)}</div>
             </td>
-            <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${cat.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatMoney(cat.netProfit)}
+            <td className="px-3 py-2 text-right bg-amber-50/30 whitespace-nowrap">
+              {cat.customsDuty > 0 ? (
+                <>
+                  <div className="text-amber-700 font-medium">{formatMoney(cat.customsDuty)}</div>
+                  <div className="text-[10px] text-slate-400">{formatPercent(cat.totalRevenue > 0 ? (cat.customsDuty / cat.totalRevenue) * 100 : 0)}</div>
+                </>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
             </td>
-            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 whitespace-nowrap ${cat.profitMargin >= 10 ? 'text-green-600' : cat.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
-              {formatPercent(cat.profitMargin)}
+            <td className="px-3 py-2 text-right bg-amber-50/30 whitespace-nowrap">
+              {cat.ddpFee > 0 ? (
+                <>
+                  <div className="text-amber-700 font-medium">{formatMoney(cat.ddpFee)}</div>
+                  <div className="text-[10px] text-slate-400">{formatPercent(cat.totalRevenue > 0 ? (cat.ddpFee / cat.totalRevenue) * 100 : 0)}</div>
+                </>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
+            <td className="px-3 py-2 text-right bg-amber-50/30 whitespace-nowrap">
+              {cat.warehouseCost > 0 ? (
+                <>
+                  <div className="text-amber-700 font-medium">{formatMoney(cat.warehouseCost)}</div>
+                  <div className="text-[10px] text-slate-400">{formatPercent(cat.totalRevenue > 0 ? (cat.warehouseCost / cat.totalRevenue) * 100 : 0)}</div>
+                </>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
+            <td className="px-3 py-2 text-right bg-orange-50/30 whitespace-nowrap">
+              {cat.gstCost > 0 ? (
+                <>
+                  <div className="text-orange-600 font-medium">{formatMoney(cat.gstCost)}</div>
+                  <div className="text-[10px] text-slate-400">{formatPercent(cat.gstCostPercent)}</div>
+                </>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
             </td>
           </tr>
         ))}
@@ -719,8 +1248,11 @@ const ParentTable: React.FC<ParentTableProps> = ({
           <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap">Category</th>
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200">#Products</th>
           <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
+          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50" />
+          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50 border-r border-slate-200" />
           <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
-          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="border-r border-slate-200" />
+          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
+          <SortableHeader column="refundedQuantity" label="RQty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="border-r border-slate-200" />
           <SortableHeader column="sellingFees" label="Selling" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50" />
           <SortableHeader column="fbaFees" label="FBA Fee" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50" />
           <SortableHeader column="refundLoss" label="Refund" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50" />
@@ -729,9 +1261,11 @@ const ParentTable: React.FC<ParentTableProps> = ({
           <SortableHeader column="fbaCost" label="FBA Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-indigo-50" />
           <SortableHeader column="fbmCost" label="FBM Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-cyan-50 border-r border-slate-200" />
           <SortableHeader column="totalProductCost" label="Cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
-          <SortableHeader column="shippingCost" label="Ship" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="border-r border-slate-200" />
-          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50" />
-          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50" />
+          <SortableHeader column="shippingCost" label="Ship" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">Customs</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">DDP</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">Warehouse</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-orange-50">GST</th>
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -749,8 +1283,15 @@ const ParentTable: React.FC<ParentTableProps> = ({
             <td className="px-3 py-2 text-left text-slate-600 text-xs">{par.category}</td>
             <td className="px-3 py-2 text-center text-slate-600 border-r border-slate-100">{par.totalProducts}</td>
             <td className="px-3 py-2 text-right font-semibold text-slate-800 whitespace-nowrap">{formatMoney(par.totalRevenue)}</td>
+            <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${par.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatMoney(par.netProfit)}
+            </td>
+            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${par.profitMargin >= 10 ? 'text-green-600' : par.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+              {formatPercent(par.profitMargin)}
+            </td>
             <td className="px-3 py-2 text-right text-slate-600">{par.totalOrders}</td>
-            <td className="px-3 py-2 text-right text-slate-600 border-r border-slate-100">{par.totalQuantity}</td>
+            <td className="px-3 py-2 text-right text-slate-600">{par.totalQuantity}</td>
+            <td className="px-3 py-2 text-right text-red-500 border-r border-slate-100">{par.refundedQuantity > 0 ? par.refundedQuantity : '-'}</td>
             <td className="px-3 py-2 text-right bg-red-50/30 whitespace-nowrap">
               <div className="text-red-600 font-medium">{formatPercent(par.sellingFeePercent)}</div>
               <div className="text-[10px] text-slate-400">{formatMoney(par.sellingFees)}</div>
@@ -761,7 +1302,7 @@ const ParentTable: React.FC<ParentTableProps> = ({
             </td>
             <td className="px-3 py-2 text-right bg-red-50/30 whitespace-nowrap">
               <div className="text-red-600 font-medium">{formatPercent(par.refundLossPercent)}</div>
-              <div className="text-[10px] par.text-slate-400">{formatMoney(par.refundLoss)}</div>
+              <div className="text-[10px] text-slate-400">{formatMoney(par.refundLoss)}</div>
             </td>
             <td className="px-3 py-2 text-right bg-red-50/30 border-r border-slate-100 whitespace-nowrap">
               {par.vat > 0 ? (
@@ -789,15 +1330,49 @@ const ParentTable: React.FC<ParentTableProps> = ({
               <div className="text-slate-800 font-medium">{formatMoney(par.totalProductCost)}</div>
               <div className="text-[10px] text-slate-400">{formatPercent(par.productCostPercent)}</div>
             </td>
-            <td className="px-3 py-2 text-right border-r border-slate-100 whitespace-nowrap">
+            <td className="px-3 py-2 text-right whitespace-nowrap">
               <div className="text-slate-800 font-medium">{formatMoney(par.shippingCost)}</div>
               <div className="text-[10px] text-slate-400">{formatPercent(par.shippingCostPercent)}</div>
             </td>
-            <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${par.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatMoney(par.netProfit)}
+            <td className="px-3 py-2 text-right bg-amber-50/30 whitespace-nowrap">
+              {par.customsDuty > 0 ? (
+                <>
+                  <div className="text-amber-700 font-medium">{formatMoney(par.customsDuty)}</div>
+                  <div className="text-[10px] text-slate-400">{formatPercent(par.totalRevenue > 0 ? (par.customsDuty / par.totalRevenue) * 100 : 0)}</div>
+                </>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
             </td>
-            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 whitespace-nowrap ${par.profitMargin >= 10 ? 'text-green-600' : par.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
-              {formatPercent(par.profitMargin)}
+            <td className="px-3 py-2 text-right bg-amber-50/30 whitespace-nowrap">
+              {par.ddpFee > 0 ? (
+                <>
+                  <div className="text-amber-700 font-medium">{formatMoney(par.ddpFee)}</div>
+                  <div className="text-[10px] text-slate-400">{formatPercent(par.totalRevenue > 0 ? (par.ddpFee / par.totalRevenue) * 100 : 0)}</div>
+                </>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
+            <td className="px-3 py-2 text-right bg-amber-50/30 whitespace-nowrap">
+              {par.warehouseCost > 0 ? (
+                <>
+                  <div className="text-amber-700 font-medium">{formatMoney(par.warehouseCost)}</div>
+                  <div className="text-[10px] text-slate-400">{formatPercent(par.totalRevenue > 0 ? (par.warehouseCost / par.totalRevenue) * 100 : 0)}</div>
+                </>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
+            <td className="px-3 py-2 text-right bg-orange-50/30 whitespace-nowrap">
+              {par.gstCost > 0 ? (
+                <>
+                  <div className="text-orange-600 font-medium">{formatMoney(par.gstCost)}</div>
+                  <div className="text-[10px] text-slate-400">{formatPercent(par.gstCostPercent)}</div>
+                </>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
             </td>
           </tr>
         ))}
@@ -836,9 +1411,11 @@ const ProductTable: React.FC<ProductTableProps> = ({
     <table className="w-full min-w-max divide-y divide-slate-200 text-xs">
       <thead className="bg-slate-50 sticky top-0 z-20">
         <tr>
-          <SortableHeader column="name" label="Product Name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="blue" className="sticky left-0 bg-slate-50 z-30 min-w-[200px] border-r border-slate-200" />
+          <SortableHeader column="name" label="Product Name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="blue" className="sticky left-0 bg-slate-50 z-30 min-w-[300px] border-r border-slate-200" />
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200">FF</th>
           <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" />
+          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-green-50" />
+          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-green-50 border-r border-slate-200" />
           <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" />
           <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" />
           <SortableHeader column="refundedQuantity" label="RQty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="border-r border-slate-200" />
@@ -854,9 +1431,7 @@ const ProductTable: React.FC<ProductTableProps> = ({
           <SortableHeader column="customsDuty" label="Customs" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-amber-50" />
           <SortableHeader column="ddpFee" label="DDP" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-amber-50" />
           <SortableHeader column="warehouseCost" label="Warehouse" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-amber-50" />
-          <SortableHeader column="gstCost" label="GST" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-orange-50 border-r border-slate-200" />
-          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-green-50" />
-          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-green-50" />
+          <SortableHeader column="gstCost" label="GST" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-orange-50" />
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -868,10 +1443,10 @@ const ProductTable: React.FC<ProductTableProps> = ({
               className="hover:bg-slate-50"
             >
               <td
-                className="px-3 py-2 text-left sticky left-0 bg-white z-10 min-w-[200px] border-r border-slate-200 cursor-pointer hover:bg-blue-50"
+                className="px-3 py-2 text-left sticky left-0 bg-white z-10 min-w-[300px] border-r border-slate-200 cursor-pointer hover:bg-blue-50"
                 onClick={() => onSelectItem({ type: 'product', data: product })}
               >
-                <div className="font-medium text-blue-600 text-xs truncate max-w-[200px]" title={product.name}>{product.name}</div>
+                <div className="font-medium text-blue-600 text-xs whitespace-normal">{product.name}</div>
                 <div className="text-[10px] text-slate-400">{product.category}</div>
               </td>
               <td className="px-3 py-2 text-center border-r border-slate-100">
@@ -889,6 +1464,14 @@ const ProductTable: React.FC<ProductTableProps> = ({
                 {showPerUnit
                   ? formatMoney(product.avgSalePrice)
                   : formatMoney(product.totalRevenue)}
+              </td>
+              <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${product.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {showPerUnit
+                  ? formatMoney(product.totalQuantity > 0 ? product.netProfit / product.totalQuantity : 0)
+                  : formatMoney(product.netProfit)}
+              </td>
+              <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${product.profitMargin >= 10 ? 'text-green-600' : product.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                {formatPercent(product.profitMargin)}
               </td>
               <td className="px-3 py-2 text-right text-slate-600">{product.totalOrders}</td>
               <td className="px-3 py-2 text-right text-slate-600">{product.totalQuantity}</td>
@@ -1029,7 +1612,7 @@ const ProductTable: React.FC<ProductTableProps> = ({
                   <span className="text-slate-300">-</span>
                 )}
               </td>
-              <td className="px-3 py-2 text-right bg-orange-50/30 border-r border-slate-100 whitespace-nowrap">
+              <td className="px-3 py-2 text-right bg-orange-50/30 whitespace-nowrap">
                 {product.gstCost > 0 ? (
                   <>
                     <div className="text-orange-600 font-medium">
@@ -1042,14 +1625,6 @@ const ProductTable: React.FC<ProductTableProps> = ({
                 ) : (
                   <span className="text-slate-300">-</span>
                 )}
-              </td>
-              <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${product.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {showPerUnit
-                  ? formatMoney(product.totalQuantity > 0 ? product.netProfit / product.totalQuantity : 0)
-                  : formatMoney(product.netProfit)}
-              </td>
-              <td className={`px-3 py-2 text-right font-medium bg-green-50/30 whitespace-nowrap ${product.profitMargin >= 10 ? 'text-green-600' : product.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
-                {formatPercent(product.profitMargin)}
               </td>
             </tr>
           ))}

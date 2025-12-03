@@ -38,24 +38,33 @@ export const findColumn = (headers: string[], possibleNames: string[]): string |
 
 /**
  * Detect fulfillment type from value (multi-language)
+ * IMPORTANT: Check FBM first because some values might contain both "amazon" and "seller"
  */
 export const detectFulfillment = (value: unknown): string => {
   if (!value) return 'Unknown';
-  const str = String(value).toLowerCase();
+  const str = String(value).toLowerCase().trim();
 
-  // FBA detection (multi-language)
-  if (str.includes('amazon') || str.includes('afn')) return 'FBA';
-
-  // FBM detection (multi-language)
+  // FBM detection FIRST (multi-language) - prioritize seller/merchant keywords
   if (str.includes('seller') ||       // EN
       str.includes('merchant') ||     // EN
       str.includes('mfn') ||          // EN
       str.includes('verkäufer') ||    // DE
       str.includes('vendeur') ||      // FR
       str.includes('venditore') ||    // IT
-      str.includes('vendedor')) {     // ES
+      str.includes('vendedor') ||     // ES
+      str.includes('satıcı') ||       // TR
+      str.includes('satici') ||       // TR (ASCII fallback)
+      str.includes('بائع')) {         // AR (Arabic: seller)
     return 'FBM';
   }
+
+  // FBA detection (multi-language)
+  // Note: Only check for "amazon" if it's not part of a URL (e.g., amazon.com)
+  // A simple heuristic: if it contains a dot after "amazon", it's likely a URL
+  if (str.includes('afn')) return 'FBA';
+  if (str.includes('amazon') && !str.includes('amazon.')) return 'FBA';
+  // Also check for standalone "amazon" (exact match or with spaces)
+  if (str === 'amazon' || str.startsWith('amazon ') || str.endsWith(' amazon') || str.includes(' amazon ')) return 'FBA';
 
   return 'Unknown';
 };

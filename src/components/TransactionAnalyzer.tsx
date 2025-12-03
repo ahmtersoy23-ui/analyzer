@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Upload, FileSpreadsheet, TrendingUp, Package, DollarSign, RefreshCw, AlertCircle, ArrowUp, ArrowDown, Save, Database, Trash2, Sparkles, ChevronDown, ChevronUp, Filter, BarChart3 } from 'lucide-react';
+import { Upload, FileSpreadsheet, Package, RefreshCw, AlertCircle, Save, Database, Trash2, Sparkles, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import * as DB from '../utils/indexedDB';
 import { getMarketplaceCurrency, CURRENCY_SYMBOLS } from '../utils/currencyExchange';
@@ -21,10 +21,13 @@ import {
   formatDateHuman
 } from './transaction-analyzer/helpers';
 import { PieChart } from './transaction-analyzer/PieChart';
-// Note: These components are extracted but will be integrated in future refactor
+import { SummaryCards } from './transaction-analyzer/SummaryCards';
+import { TransactionFilters } from './transaction-analyzer/TransactionFilters';
+import { OrderDetailsCards } from './transaction-analyzer/OrderDetailsCards';
+import { FulfillmentStatsCards } from './transaction-analyzer/FulfillmentStatsCards';
+import { FeeDetailsSection } from './transaction-analyzer/FeeDetailsSection';
+// Note: PostalZoneMap is extracted but currently inline due to zone data handling
 // import { PostalZoneMap } from './transaction-analyzer/PostalZoneMap';
-// import { TransactionFilters } from './transaction-analyzer/TransactionFilters';
-// import { SummaryCards } from './transaction-analyzer/SummaryCards';
 
 // Component-specific types that aren't in shared types
 interface TransactionAnalyzerProps {
@@ -157,27 +160,6 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
       return `${symbol}${value.toFixed(0)}`;
     }
     return `${symbol}${value.toFixed(2)}`;
-  };
-
-  // ComparisonBadge - inline version for this component (matches SummaryCards)
-  const ComparisonBadge: React.FC<{ current: number; previous: number }> = ({ current, previous }) => {
-    if (previous === 0) return null;
-
-    const change = ((current - previous) / Math.abs(previous)) * 100;
-    const isPositive = change > 0;
-    const isNegative = change < 0;
-
-    if (Math.abs(change) < 0.1) return null;
-
-    return (
-      <div className={`flex items-center gap-1 text-xs font-medium mt-1 ${
-        isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-slate-500'
-      }`}>
-        {isPositive && <ArrowUp className="w-3 h-3" />}
-        {isNegative && <ArrowDown className="w-3 h-3" />}
-        <span>{Math.abs(change).toFixed(1)}%</span>
-      </div>
-    );
   };
 
   // Helper functions (findColumn, detectFulfillment, categorizeTransactionType, parseNumber,
@@ -1394,110 +1376,26 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
           )}
         </div>
 
+        {/* Transaction Filters - Extracted Component */}
         {allData.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm p-6 mb-6 no-print">
-            <div className="flex items-center gap-2 mb-4">
-              <Filter className="w-5 h-5 text-slate-600" />
-              <h2 className="text-lg font-semibold text-slate-800">Filters</h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              {/* Marketplace Filter - Show only if multiple marketplaces */}
-              {(() => {
-                const marketplaceCodes = storedFiles.map(f => f.marketplace as MarketplaceCode);
-                if (marketplaceCodes.length > 1) {
-                  return (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Marketplace
-                      </label>
-                      <select
-                        value={marketplaceCode || ''}
-                        onChange={(e) => setMarketplaceCode(e.target.value as MarketplaceCode || null)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                      >
-                        <option value="">All</option>
-                        {marketplaceCodes.map(code => (
-                          <option key={code} value={code}>
-                            {CONFIGS[code].currencySymbol} {CONFIGS[code].name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              {/* Date Range */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Start Date
-                </label>
-                <input
-                  type="date"
-                  value={dateRange.start}
-                  onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  End Date
-                </label>
-                <input
-                  type="date"
-                  value={dateRange.end}
-                  onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-
-              {/* Fulfillment */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Fulfillment
-                </label>
-                <select
-                  value={selectedFulfillment}
-                  onChange={(e) => setSelectedFulfillment(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                >
-                  <option value="all">All</option>
-                  <option value="FBA">FBA</option>
-                  <option value="FBM">FBM</option>
-                </select>
-              </div>
-
-              {/* Comparison Mode */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Comparison
-                </label>
-                <select
-                  value={comparisonMode}
-                  onChange={(e) => setComparisonMode(e.target.value as 'none' | 'previous-period' | 'previous-year')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  disabled={!dateRange.start || !dateRange.end}
-                >
-                  <option value="none">None</option>
-                  <option value="previous-period">Previous Period</option>
-                  <option value="previous-year">Previous Year</option>
-                </select>
-              </div>
-
-            </div>
-
-            {/* Comparison Info */}
-            {comparisonMode !== 'none' && comparisonAnalytics && (
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="text-sm text-blue-800">
-                  <span className="font-semibold">Comparing:</span> {comparisonAnalytics.label}
-                </div>
-              </div>
-            )}
-          </div>
+          <TransactionFilters
+            marketplaceCode={marketplaceCode}
+            dateRange={dateRange}
+            selectedFulfillment={selectedFulfillment}
+            comparisonMode={comparisonMode}
+            storedFiles={storedFiles}
+            comparisonDateRange={
+              comparisonMode === 'previous-period'
+                ? comparisonRanges?.previousPeriod
+                : comparisonMode === 'previous-year'
+                ? comparisonRanges?.previousYear
+                : null
+            }
+            onMarketplaceChange={setMarketplaceCode}
+            onDateRangeChange={setDateRange}
+            onFulfillmentChange={setSelectedFulfillment}
+            onComparisonModeChange={setComparisonMode}
+          />
         )}
 
         {loading && allData.length > 0 && (
@@ -1552,76 +1450,13 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
               </div>
             )}
 
-           {/* Simplified Top Metrics - Only 3 most important cards */}
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 print:gap-2 print:mb-4">
-              {/* Total Sales */}
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl shadow-md p-6 border border-green-100 print:p-2 print:shadow-none print:border print:border-slate-200">
-                <div className="flex items-center justify-between mb-3 print:mb-1">
-                  <span className="text-base font-semibold text-green-800 print:text-xs print:text-slate-700">Toplam Satış</span>
-                  <DollarSign className="w-6 h-6 text-green-600 print:hidden" />
-                </div>
-                <p className="text-3xl font-bold text-green-900 mb-2 print:text-base print:font-semibold print:mb-0">
-                  {formatMoney(analytics.totalSales)}
-                </p>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-green-700 print:text-[10px]">{analytics.totalOrders} sipariş</p>
-                  {comparisonAnalytics && (
-                    <ComparisonBadge
-                      current={analytics.totalSales}
-                      previous={comparisonAnalytics.totalSales}
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* Net Income - Only show when 'all' filter is selected */}
-              {selectedFulfillment === 'all' && (
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-md p-6 border border-blue-100 print:p-2 print:shadow-none print:border print:border-slate-200">
-                  <div className="flex items-center justify-between mb-3 print:mb-1">
-                    <span className="text-base font-semibold text-blue-800 print:text-xs print:text-slate-700">Net Gelir</span>
-                    <TrendingUp className="w-6 h-6 text-blue-600 print:hidden" />
-                  </div>
-                  <p className="text-3xl font-bold text-blue-900 mb-2 print:text-base print:font-semibold print:mb-0">
-                    {formatMoney(analytics.totalNet)}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-blue-700 print:text-[10px]">
-                      {analytics.totalAllSales > 0 ? `${((analytics.totalNet / analytics.totalAllSales) * 100).toFixed(1)}% net oran` : 'Total - Tüm Giderler'}
-                    </p>
-                    {comparisonAnalytics && (
-                      <ComparisonBadge
-                        current={analytics.totalNet}
-                        previous={comparisonAnalytics.totalNet}
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Disbursement - Only show when 'all' filter and has disbursements */}
-              {selectedFulfillment === 'all' && analytics.disbursements.length > 0 && (
-                <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl shadow-md p-6 border border-purple-100 print:p-2 print:shadow-none print:border print:border-slate-200">
-                  <div className="flex items-center justify-between mb-3 print:mb-1">
-                    <span className="text-base font-semibold text-purple-800 print:text-xs print:text-slate-700">Disbursement</span>
-                    <TrendingUp className="w-6 h-6 text-purple-600 print:hidden" />
-                  </div>
-                  <p className="text-3xl font-bold text-purple-900 mb-2 print:text-base print:font-semibold print:mb-0">
-                    {formatMoney(analytics.totalDisbursement)}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-purple-700 print:text-[10px]">
-                      {analytics.disbursements.length} transfer
-                    </p>
-                    {comparisonAnalytics && (
-                      <ComparisonBadge
-                        current={analytics.totalDisbursement}
-                        previous={comparisonAnalytics.totalDisbursement}
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Summary Cards - Extracted Component */}
+            <SummaryCards
+              analytics={analytics}
+              comparisonAnalytics={comparisonAnalytics}
+              selectedFulfillment={selectedFulfillment}
+              formatMoney={formatMoney}
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 print-single-col">
               <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
@@ -1902,177 +1737,19 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
               </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              {(selectedFulfillment === 'all' || selectedFulfillment === 'FBA') && analytics.fbaOrders > 0 && (
-                <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
-                  <h3 className="text-lg font-semibold text-slate-800 mb-4">FBA Order Detayları</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-slate-700">Product Sales</span>
-                      <span className="text-sm font-semibold text-green-600">
-                        {formatMoney(analytics.fbaOrderSales)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-slate-700">Selling Fees</span>
-                      <span className="text-sm font-semibold text-red-600">
-                        -{formatMoney(analytics.fbaSellingFees)} ({analytics.fbaOrderSales > 0 ? ((analytics.fbaSellingFees / analytics.fbaOrderSales) * 100).toFixed(1) : '0'}%)
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-slate-700">FBA Fees</span>
-                      <span className="text-sm font-semibold text-red-600">
-                        -{formatMoney(analytics.fbaOrderFees)} ({analytics.fbaOrderSales > 0 ? ((analytics.fbaOrderFees / analytics.fbaOrderSales) * 100).toFixed(1) : '0'}%)
-                      </span>
-                    </div>
-                    <div className="pt-3 border-t border-slate-200">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-slate-700">Net (Order Level)</span>
-                        <span className="text-lg font-bold text-blue-600">
-                          {formatMoney(analytics.fbaOrderNet)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="mt-2 text-xs text-slate-500">
-                      {analytics.fbaOrders} FBA sipariş
-                    </div>
-                  </div>
-                </div>
-              )}
+            {/* Order Details Cards - Extracted Component */}
+            <OrderDetailsCards
+              analytics={analytics}
+              selectedFulfillment={selectedFulfillment}
+              formatMoney={formatMoney}
+            />
 
-              {(selectedFulfillment === 'all' || selectedFulfillment === 'FBM') && analytics.fbmOrders > 0 && (
-                <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
-                  <h3 className="text-lg font-semibold text-slate-800 mb-4">FBM Order Detayları</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-slate-700">Product Sales</span>
-                      <span className="text-sm font-semibold text-green-600">
-                        {formatMoney(analytics.fbmOrderSales)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-slate-700">Selling Fees</span>
-                      <span className="text-sm font-semibold text-red-600">
-                        -{formatMoney(analytics.fbmSellingFees)} ({analytics.fbmOrderSales > 0 ? ((analytics.fbmSellingFees / analytics.fbmOrderSales) * 100).toFixed(1) : '0'}%)
-                      </span>
-                    </div>
-                    <div className="pt-3 border-t border-slate-200">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-slate-700">Net (Order Level)</span>
-                        <span className="text-lg font-bold text-blue-600">
-                          {formatMoney(analytics.fbmOrderNet)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="mt-2 text-xs text-slate-500">
-                      {analytics.fbmOrders} FBM sipariş
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              {selectedFulfillment !== 'FBM' && (
-                <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
-                  <h3 className="text-lg font-semibold text-slate-800 mb-4">Fulfillment Dağılımı</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-slate-700">FBA</span>
-                        <span className="text-sm font-bold text-blue-600">
-                          {analytics.fbaOrders} sipariş ({analytics.fbaPercentage.toFixed(1)}%)
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-200 rounded-full h-3">
-                        <div
-                          className="bg-blue-600 h-3 rounded-full transition-all"
-                          style={{ width: `${analytics.fbaPercentage}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {selectedFulfillment === 'all' && (
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-slate-700">FBM</span>
-                          <span className="text-sm font-bold text-green-600">
-                            {analytics.fbmOrders} sipariş ({analytics.fbmPercentage.toFixed(1)}%)
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-200 rounded-full h-3">
-                          <div
-                            className="bg-green-600 h-3 rounded-full transition-all"
-                            style={{ width: `${analytics.fbmPercentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {selectedFulfillment !== 'FBA' && selectedFulfillment === 'FBM' && (
-                <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
-                  <h3 className="text-lg font-semibold text-slate-800 mb-4">Fulfillment Dağılımı</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-slate-700">FBM</span>
-                        <span className="text-sm font-bold text-green-600">
-                          {analytics.fbmOrders} sipariş (100%)
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-200 rounded-full h-3">
-                        <div
-                          className="bg-green-600 h-3 rounded-full transition-all"
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">İade İstatistikleri</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-700">Toplam İade</span>
-                    <div className="text-right">
-                      <span className="text-sm font-semibold text-red-600">
-                        {formatMoney(analytics.totalRefundAmount)}
-                      </span>
-                      <span className="text-xs text-slate-500 ml-2">
-                        ({analytics.totalRefunds} adet, {analytics.totalSales > 0 ? ((analytics.totalRefundAmount / analytics.totalSales) * 100).toFixed(1) : '0'}%)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-700">Kurtarılan</span>
-                    <div className="text-right">
-                      <span className="text-sm font-semibold text-green-600">
-                        {formatMoney(analytics.recoveredRefunds)}
-                      </span>
-                      <span className="text-xs text-slate-500 ml-2">
-                        ({analytics.totalSales > 0 ? ((analytics.recoveredRefunds / analytics.totalSales) * 100).toFixed(1) : '0'}%)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-700">İade Kaybı</span>
-                    <div className="text-right">
-                      <span className="text-sm font-semibold text-red-600">
-                        {formatMoney(analytics.actualRefundLoss)}
-                      </span>
-                      <span className="text-xs text-slate-500 ml-2">
-                        ({analytics.totalSales > 0 ? ((analytics.actualRefundLoss / analytics.totalSales) * 100).toFixed(1) : '0'}%)
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* Fulfillment Stats Cards - Extracted Component */}
+            <FulfillmentStatsCards
+              analytics={analytics}
+              selectedFulfillment={selectedFulfillment}
+              formatMoney={formatMoney}
+            />
 
             {/* Detailed Breakdown Section - Collapsible */}
             <div className="mb-6 no-print">
@@ -2097,193 +1774,19 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
               </button>
             </div>
 
+            {/* Fee Details Section - Extracted Component */}
             {showDetailedBreakdown && (
-              <>
-            {analytics.adjustmentGroups && Object.keys(analytics.adjustmentGroups).length > 0 && selectedFulfillment !== 'FBM' && (
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6 print-block print-card">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-slate-800">Adjustment Detayları</h3>
-                  {comparisonAnalytics && (
-                    <button
-                      onClick={() => {
-                        setComparisonDetailType('adjustments');
-                        setComparisonDetailOpen(true);
-                      }}
-                      className="no-print px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"
-                    >
-                      📊 Detay
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  {Object.entries(analytics.adjustmentGroups)
-                    .sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total))
-                    .map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm text-slate-700">{translateDescription(key)}</span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {formatMoney(value.total)} <span className="text-slate-500">({value.count} işlem)</span>
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {analytics.inventoryGroups && Object.keys(analytics.inventoryGroups).length > 0 && selectedFulfillment !== 'FBM' && (
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6 print-block print-card">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-slate-800">FBA Inventory Fee Detayları</h3>
-                  {comparisonAnalytics && (
-                    <button
-                      onClick={() => {
-                        setComparisonDetailType('inventory');
-                        setComparisonDetailOpen(true);
-                      }}
-                      className="no-print px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"
-                    >
-                      📊 Detay
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  {Object.entries(analytics.inventoryGroups)
-                    .sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total))
-                    .map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm text-slate-700">{translateDescription(key)}</span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {formatMoney(value.total)} <span className="text-slate-500">({value.count} işlem)</span>
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {analytics.serviceGroups && Object.keys(analytics.serviceGroups).length > 0 && selectedFulfillment !== 'FBM' && (
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6 print-block print-card">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-slate-800">Service Fee Detayları</h3>
-                  {comparisonAnalytics && (
-                    <button
-                      onClick={() => {
-                        setComparisonDetailType('service');
-                        setComparisonDetailOpen(true);
-                      }}
-                      className="no-print px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"
-                    >
-                      📊 Detay
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  {Object.entries(analytics.serviceGroups)
-                    .sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total))
-                    .map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm text-slate-700">{translateDescription(key)}</span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {formatMoney(value.total)} <span className="text-slate-500">({value.count} işlem)</span>
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {analytics.fbaCustomerReturnGroups && Object.keys(analytics.fbaCustomerReturnGroups).length > 0 && selectedFulfillment !== 'FBM' && (
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6 print-block print-card">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">FBA Customer Return Fee Detayları</h3>
-                <div className="space-y-3">
-                  {Object.entries(analytics.fbaCustomerReturnGroups)
-                    .sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total))
-                    .map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm text-slate-700">{translateDescription(key)}</span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {formatMoney(value.total)} <span className="text-slate-500">({value.count} işlem)</span>
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* FBA Transaction Fee, Chargeback, Others, Amazon Fees - Sadece marketplace seçiliyken göster */}
-            {marketplaceCode && analytics.fbaTransactionGroups && Object.keys(analytics.fbaTransactionGroups).length > 0 && selectedFulfillment !== 'FBM' && (
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6 print-block print-card no-print">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">FBA Transaction Fee Detayları</h3>
-                <div className="space-y-3">
-                  {Object.entries(analytics.fbaTransactionGroups)
-                    .sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total))
-                    .map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm text-slate-700">{translateDescription(key)}</span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {formatMoney(value.total)} <span className="text-slate-500">({value.count} işlem)</span>
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {marketplaceCode && Object.keys(analytics.chargebackGroups).length > 0 && selectedFulfillment !== 'FBM' && (
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6 print-block print-card no-print">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">Chargeback Refund (SKU Bazlı)</h3>
-                <div className="space-y-3">
-                  {Object.entries(analytics.chargebackGroups)
-                    .sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total))
-                    .map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm text-slate-700">{key}</span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {formatMoney(value.total)} <span className="text-slate-500">({value.count} işlem)</span>
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {marketplaceCode && Object.keys(analytics.othersGroups).length > 0 && selectedFulfillment === 'all' && (
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6 print-block print-card">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">Others Detayları</h3>
-                <div className="space-y-3">
-                  {Object.entries(analytics.othersGroups)
-                    .sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total))
-                    .map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm text-slate-700">{translateDescription(key)}</span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {formatMoney(value.total)} <span className="text-slate-500">({value.count} işlem)</span>
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {marketplaceCode && Object.keys(analytics.amazonFeesGroups).length > 0 && selectedFulfillment === 'all' && (
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6 print-block print-card">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">Amazon Fees Detayları</h3>
-                <div className="space-y-3">
-                  {Object.entries(analytics.amazonFeesGroups)
-                    .sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total))
-                    .map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm text-slate-700">{translateDescription(key)}</span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {formatMoney(value.total)} <span className="text-slate-500">({value.count} işlem)</span>
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            </>
+              <FeeDetailsSection
+                analytics={analytics}
+                comparisonAnalytics={comparisonAnalytics}
+                selectedFulfillment={selectedFulfillment}
+                marketplaceCode={marketplaceCode}
+                formatMoney={formatMoney}
+                onOpenComparisonDetail={(type) => {
+                  setComparisonDetailType(type);
+                  setComparisonDetailOpen(true);
+                }}
+              />
             )}
           </>
         )}

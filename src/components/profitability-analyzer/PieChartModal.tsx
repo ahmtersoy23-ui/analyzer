@@ -32,8 +32,6 @@ const PieChartModal: React.FC<PieChartModalProps> = ({
   const {
     showPerUnit,
     setShowPerUnit,
-    filterMarketplace,
-    filterFulfillment,
     startDate,
     endDate,
   } = useProfitabilityFilters();
@@ -153,16 +151,18 @@ const PieChartModal: React.FC<PieChartModalProps> = ({
                 </span>
               )}
             </div>
-            {/* Active filters */}
+            {/* Item's actual fulfillment + date filters */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              {filterMarketplace !== 'all' && (
-                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium">
-                  {filterMarketplace}
-                </span>
-              )}
-              {filterFulfillment !== 'all' && (
-                <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-medium">
-                  {filterFulfillment}
+              {/* Show item's actual fulfillment type (not global filter) */}
+              {selectedItem.data.fulfillment && (
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                  selectedItem.data.fulfillment === 'FBA'
+                    ? 'bg-blue-100 text-blue-700'
+                    : selectedItem.data.fulfillment === 'FBM'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-purple-100 text-purple-700'
+                }`}>
+                  {selectedItem.data.fulfillment}
                 </span>
               )}
               {(startDate || endDate) && (

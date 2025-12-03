@@ -33,6 +33,8 @@ interface CostUploadTabProps {
   nameOverrides: NameOverride[];
   onOverridesChange: (overrides: NameOverride[]) => void;
   fbmNameInfo: FBMNameInfo[];  // FBM SKU'ları olan NAME listesi
+  totalCatalogProducts: number;
+  onTotalCatalogProductsChange: (value: number) => void;
 }
 
 // Group cost data by NAME for display
@@ -54,6 +56,8 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
   nameOverrides,
   onOverridesChange,
   fbmNameInfo,
+  totalCatalogProducts,
+  onTotalCatalogProductsChange,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showOverrideEditor, setShowOverrideEditor] = useState(false);
@@ -482,6 +486,25 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
           )}
         </div>
       )}
+
+      {/* Total Catalog Products Input */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-medium text-slate-700">
+            Toplam Katalog Ürün Sayısı:
+          </label>
+          <input
+            type="number"
+            value={totalCatalogProducts || ''}
+            onChange={(e) => onTotalCatalogProductsChange(parseInt(e.target.value, 10) || 0)}
+            placeholder="Örn: 1500"
+            className="w-32 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          />
+          <span className="text-xs text-slate-500">
+            (Details başlığında satış oranı hesabı için kullanılır)
+          </span>
+        </div>
+      </div>
 
       {/* Summary section */}
       {costSummary && (

@@ -2,8 +2,9 @@
  * CategorySummary - Category cards with sales breakdown
  */
 
-import React from 'react';
-import { PieChart as PieChartIcon, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useCallback } from 'react';
+import { PieChart as PieChartIcon, ChevronDown, ChevronUp, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { formatPercent } from '../../utils/formatters';
 import { ComparisonBadge } from '../shared/ComparisonBadge';
 import { CategoryAnalytics } from './types';
@@ -33,6 +34,40 @@ export const CategorySummary: React.FC<CategorySummaryProps> = ({
   formatMoney,
   onToggleCategory
 }) => {
+  // Generate filename based on filters
+  const generateFileName = useCallback(() => {
+    const parts = ['Faz2', 'CategorySummary'];
+    if (selectedMarketplace !== 'all') parts.push(selectedMarketplace);
+    if (selectedFulfillment !== 'all') parts.push(selectedFulfillment);
+    if (startDate) parts.push(startDate.replace(/-/g, ''));
+    if (endDate) parts.push(endDate.replace(/-/g, ''));
+    return parts.join('_') + '.xlsx';
+  }, [selectedMarketplace, selectedFulfillment, startDate, endDate]);
+
+  // Export to Excel
+  const handleExportExcel = useCallback(() => {
+    const data = categories.map(cat => ({
+      'Category': cat.category,
+      'Total Sales': cat.totalSales,
+      'Orders': cat.totalOrders,
+      'Products': cat.totalProducts,
+      'FBA Sales': cat.fbaSales || 0,
+      'FBM Sales': cat.fbmSales || 0,
+      'FBA Fees': cat.fbaFees || 0,
+      'FBA Fee %': cat.fbaFeePercentage,
+      'Selling Fees': cat.sellingFees || 0,
+      'Selling Fee %': cat.sellingFeePercentage,
+      'Refund Loss': cat.totalRefundLoss || 0,
+      'Refund Loss %': cat.refundLossPercentage,
+      'VAT %': cat.vatPercentage,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Categories');
+    XLSX.writeFile(wb, generateFileName());
+  }, [categories, generateFileName]);
+
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
       <div className="flex items-center justify-between mb-6">
@@ -63,6 +98,17 @@ export const CategorySummary: React.FC<CategorySummaryProps> = ({
           )}
         </div>
       </div>
+      {/* Export Button Row */}
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={handleExportExcel}
+          className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg flex items-center gap-1.5 transition-colors"
+          title="Export to Excel"
+        >
+          <Download className="w-4 h-4" />
+          Export
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {/* ALL Categories Card */}
@@ -70,9 +116,20 @@ export const CategorySummary: React.FC<CategorySummaryProps> = ({
           const totalSales = categories.reduce((sum, c) => sum + c.totalSales, 0);
           const totalOrders = categories.reduce((sum, c) => sum + c.totalOrders, 0);
           const totalProducts = categories.reduce((sum, c) => sum + c.totalProducts, 0);
-          const avgFbaFee = categories.length > 0 ? categories.reduce((sum, c) => sum + c.fbaFeePercentage, 0) / categories.length : 0;
-          const avgSellingFee = categories.length > 0 ? categories.reduce((sum, c) => sum + c.sellingFeePercentage, 0) / categories.length : 0;
-          const avgRefundLoss = categories.length > 0 ? categories.reduce((sum, c) => sum + c.refundLossPercentage, 0) / categories.length : 0;
+
+          // Weighted averages using absolute values
+          const totalFbaSales = categories.reduce((sum, c) => sum + (c.fbaSales || 0), 0);
+          const totalFbaFees = categories.reduce((sum, c) => sum + (c.fbaFees || 0), 0);
+          const totalSellingFees = categories.reduce((sum, c) => sum + (c.sellingFees || 0), 0);
+          const totalRefundLoss = categories.reduce((sum, c) => sum + (c.totalRefundLoss || 0), 0);
+
+          // FBA Fee % = Total FBA Fees / Total FBA Sales (weighted average)
+          const avgFbaFee = totalFbaSales > 0 ? (totalFbaFees / totalFbaSales) * 100 : 0;
+          // Selling Fee % = Total Selling Fees / Total Sales (weighted average)
+          const avgSellingFee = totalSales > 0 ? (totalSellingFees / totalSales) * 100 : 0;
+          // Refund Loss % = Total Refund Loss / Total Sales (weighted average)
+          const avgRefundLoss = totalSales > 0 ? (totalRefundLoss / totalSales) * 100 : 0;
+          // VAT % - simple average since it varies by marketplace
           const avgVat = categories.length > 0 ? categories.reduce((sum, c) => sum + c.vatPercentage, 0) / categories.length : 0;
 
           // Comparison data for All Categories
@@ -92,14 +149,10 @@ export const CategorySummary: React.FC<CategorySummaryProps> = ({
 
               {/* Sales */}
               <div className="mb-3 pb-3 border-b border-indigo-200">
-                {comparisonMode === 'none' ? (
-                  <div className="text-2xl font-bold text-indigo-600 text-center">{formatMoney(totalSales)}</div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <div className="text-2xl font-bold text-indigo-600">{formatMoney(totalSales)}</div>
-                    {prevTotalSales > 0 && (
-                      <ComparisonBadge current={totalSales} previous={prevTotalSales} />
-                    )}
+                <div className="text-2xl font-bold text-indigo-600 text-center">{formatMoney(totalSales)}</div>
+                {comparisonMode !== 'none' && prevTotalSales > 0 && (
+                  <div className="flex justify-center mt-1">
+                    <ComparisonBadge current={totalSales} previous={prevTotalSales} />
                   </div>
                 )}
               </div>
@@ -170,14 +223,10 @@ export const CategorySummary: React.FC<CategorySummaryProps> = ({
 
               {/* Sales */}
               <div className="mb-3 pb-3 border-b border-slate-200">
-                {comparisonMode === 'none' ? (
-                  <div className="text-2xl font-bold text-green-600 text-center">{formatMoney(cat.totalSales)}</div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <div className="text-2xl font-bold text-green-600">{formatMoney(cat.totalSales)}</div>
-                    {prevCat && (
-                      <ComparisonBadge current={cat.totalSales} previous={prevCat.totalSales} />
-                    )}
+                <div className="text-2xl font-bold text-green-600 text-center">{formatMoney(cat.totalSales)}</div>
+                {comparisonMode !== 'none' && prevCat && (
+                  <div className="flex justify-center mt-1">
+                    <ComparisonBadge current={cat.totalSales} previous={prevCat.totalSales} />
                   </div>
                 )}
               </div>

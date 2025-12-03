@@ -18,6 +18,7 @@ interface SavedFilters {
   endDate?: string;
   filterMarketplace?: string;
   filterFulfillment?: string;
+  selectedMarketplaces?: string[]; // Array for JSON serialization
 }
 
 interface ProfitabilityFilterState {
@@ -27,6 +28,7 @@ interface ProfitabilityFilterState {
 
   // Main filters
   filterMarketplace: string;
+  selectedMarketplaces: Set<string>; // Multi-select marketplaces
   filterFulfillment: string;
   filterCategory: string;
   filterParent: string;
@@ -50,6 +52,8 @@ interface ProfitabilityFilterActions {
   setStartDate: (date: string) => void;
   setEndDate: (date: string) => void;
   setFilterMarketplace: (marketplace: string) => void;
+  setSelectedMarketplaces: (marketplaces: Set<string>) => void;
+  toggleMarketplace: (marketplace: string) => void;
   setFilterFulfillment: (fulfillment: string) => void;
   setFilterCategory: (category: string) => void;
   setFilterParent: (parent: string) => void;
@@ -113,10 +117,28 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
 
   // Main filters
   const [filterMarketplace, setFilterMarketplace] = useState<string>(savedFilters.filterMarketplace || 'all');
+  const [selectedMarketplaces, setSelectedMarketplaces] = useState<Set<string>>(() =>
+    new Set(savedFilters.selectedMarketplaces || [])
+  );
   const [filterFulfillment, setFilterFulfillment] = useState<string>(savedFilters.filterFulfillment || 'all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterParent, setFilterParent] = useState<string>('all');
   const [filterName, setFilterName] = useState<string>('all');
+
+  // Toggle marketplace in multi-select
+  const toggleMarketplace = useCallback((marketplace: string) => {
+    setSelectedMarketplaces(prev => {
+      const next = new Set(prev);
+      if (next.has(marketplace)) {
+        next.delete(marketplace);
+      } else {
+        next.add(marketplace);
+      }
+      return next;
+    });
+    // Clear single marketplace filter when using multi-select
+    setFilterMarketplace('all');
+  }, []);
 
   // View options
   const [detailsViewMode, setDetailsViewMode] = useState<DetailsViewMode>('sku');
@@ -133,13 +155,19 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
 
   // Save to localStorage when main filters change
   useEffect(() => {
-    saveFilters({ startDate, endDate, filterMarketplace, filterFulfillment });
-  }, [startDate, endDate, filterMarketplace, filterFulfillment]);
+    saveFilters({
+      startDate,
+      endDate,
+      filterMarketplace,
+      filterFulfillment,
+      selectedMarketplaces: Array.from(selectedMarketplaces)
+    });
+  }, [startDate, endDate, filterMarketplace, filterFulfillment, selectedMarketplaces]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterMarketplace, filterFulfillment, filterCategory, filterParent, filterName, startDate, endDate]);
+  }, [filterMarketplace, selectedMarketplaces, filterFulfillment, filterCategory, filterParent, filterName, startDate, endDate]);
 
   // Sort handler with smart direction toggle
   const handleSort = useCallback((column: string) => {
@@ -160,6 +188,7 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
     setStartDate('');
     setEndDate('');
     setFilterMarketplace('all');
+    setSelectedMarketplaces(new Set());
     setFilterFulfillment('all');
     setFilterCategory('all');
     setFilterParent('all');
@@ -175,6 +204,7 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
     startDate,
     endDate,
     filterMarketplace,
+    selectedMarketplaces,
     filterFulfillment,
     filterCategory,
     filterParent,
@@ -191,6 +221,8 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
     setStartDate,
     setEndDate,
     setFilterMarketplace,
+    setSelectedMarketplaces,
+    toggleMarketplace,
     setFilterFulfillment,
     setFilterCategory,
     setFilterParent,
@@ -207,6 +239,7 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
     startDate,
     endDate,
     filterMarketplace,
+    selectedMarketplaces,
     filterFulfillment,
     filterCategory,
     filterParent,
@@ -219,6 +252,7 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
     currentPage,
     handleSort,
     resetFilters,
+    toggleMarketplace,
   ]);
 
   return (

@@ -2,8 +2,9 @@
  * DetailsTable - Product/Parent details with filters and sorting
  */
 
-import React, { useState, useMemo } from 'react';
-import { Tag } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Tag, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { formatPercent } from '../../utils/formatters';
 import { ComparisonBadge } from '../shared/ComparisonBadge';
 import { SortableHeader } from '../shared/SortableHeader';
@@ -64,6 +65,9 @@ interface DetailsTableProps {
     fbaSales: number;
     fbmSales: number;
   };
+  // Filter display props
+  filterMarketplace: string;
+  filterFulfillment: string;
   onViewModeChange: (mode: 'category' | 'parent' | 'name') => void;
   onCategoryChange: (value: string) => void;
   onParentChange: (value: string) => void;
@@ -96,6 +100,8 @@ export const DetailsTable: React.FC<DetailsTableProps> = ({
   comparisonDateRange,
   globalCosts,
   salesByFulfillment,
+  filterMarketplace,
+  filterFulfillment,
   onViewModeChange,
   onCategoryChange,
   onParentChange,
@@ -124,13 +130,112 @@ export const DetailsTable: React.FC<DetailsTableProps> = ({
     [detailsProducts, transactionData]
   );
 
+  // Generate filename based on filters
+  const generateFileName = useCallback(() => {
+    const parts = ['Faz2', 'Details'];
+
+    // Add view mode
+    const viewModeLabels: Record<string, string> = {
+      'category': 'Category',
+      'parent': 'Parent',
+      'name': 'Product'
+    };
+    parts.push(viewModeLabels[detailsViewMode] || detailsViewMode);
+
+    // Add filters
+    if (filterMarketplace !== 'all') parts.push(filterMarketplace);
+    if (filterFulfillment !== 'all') parts.push(filterFulfillment);
+    if (dateRange.start) parts.push(dateRange.start.replace(/-/g, ''));
+    if (dateRange.end) parts.push(dateRange.end.replace(/-/g, ''));
+
+    return parts.join('_') + '.xlsx';
+  }, [detailsViewMode, filterMarketplace, filterFulfillment, dateRange]);
+
+  // Export to Excel
+  const handleExportExcel = useCallback(() => {
+    let data: any[] = [];
+    let sheetName = 'Data';
+
+    if (detailsViewMode === 'category') {
+      sheetName = 'Categories';
+      data = filteredCategories.map(cat => ({
+        'Category': cat.category,
+        'Total Sales': cat.totalSales,
+        'Orders': cat.totalOrders,
+        'Products': cat.totalProducts,
+        'FBA Fee': cat.fbaFees,
+        'FBA Fee %': cat.fbaFeePercentage,
+        'Selling Fee': cat.sellingFees,
+        'Selling Fee %': cat.sellingFeePercentage,
+        'Refund Loss': cat.totalRefundLoss,
+        'Refund Loss %': cat.refundLossPercentage,
+      }));
+    } else if (detailsViewMode === 'parent') {
+      sheetName = 'Parents';
+      data = filteredParents.map(par => ({
+        'Parent ASIN': par.parent,
+        'Category': par.category,
+        'Total Sales': par.totalSales,
+        'Orders': par.totalOrders,
+        'Products': par.totalProducts,
+      }));
+    } else {
+      sheetName = 'Products';
+      data = detailsProducts.map((p: any) => ({
+        'Name': p.name,
+        'ASIN': p.asin,
+        'Parent': p.parent,
+        'Category': p.category,
+        'Total Sales': p.totalSales,
+        'Orders': p.totalOrders,
+        'FBA Sales': p.fbaSales || 0,
+        'FBM Sales': p.fbmSales || 0,
+        'FBA Fees': p.fbaFees || 0,
+        'Selling Fees': p.sellingFees || 0,
+        'Refund Loss': p.totalRefundLoss || 0,
+        'Avg Order Value': p.avgOrderValue || 0,
+      }));
+    }
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, generateFileName());
+  }, [detailsViewMode, filteredCategories, filteredParents, detailsProducts, generateFileName]);
+
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
           <Tag className="w-5 h-5 text-indigo-600" />
           Details
         </h2>
+        {/* Filter Info Display */}
+        <div className="text-sm text-slate-600">
+          {filterMarketplace !== 'all' && <span className="font-medium">{filterMarketplace}</span>}
+          {filterMarketplace !== 'all' && (dateRange.start || dateRange.end || filterFulfillment !== 'all' || comparisonMode !== 'none') && <span className="mx-2">•</span>}
+          {(dateRange.start || dateRange.end) && (
+            <span>
+              {dateRange.start && new Date(dateRange.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {dateRange.start && dateRange.end && ' - '}
+              {dateRange.end && new Date(dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          )}
+          {(dateRange.start || dateRange.end) && (filterFulfillment !== 'all' || comparisonMode !== 'none') && <span className="mx-2">•</span>}
+          {filterFulfillment !== 'all' && <span className="font-medium">{filterFulfillment}</span>}
+          {filterFulfillment !== 'all' && comparisonMode !== 'none' && <span className="mx-2">•</span>}
+          {comparisonMode !== 'none' && (
+            <span className="font-medium text-blue-600">
+              {comparisonMode === 'previous-period' ? 'vs Prev Period' : 'vs Prev Year'}
+            </span>
+          )}
+          {filterMarketplace === 'all' && !dateRange.start && !dateRange.end && filterFulfillment === 'all' && comparisonMode === 'none' && (
+            <span className="text-slate-400">All data</span>
+          )}
+        </div>
+      </div>
+      {/* Toggle & Export Row */}
+      <div className="flex items-center justify-between mb-4">
         {/* Category/Parent/Name Segmented Control */}
         <div className="inline-flex rounded-lg border border-slate-300 p-1 bg-slate-50">
           <button
@@ -164,6 +269,14 @@ export const DetailsTable: React.FC<DetailsTableProps> = ({
             Name
           </button>
         </div>
+        <button
+          onClick={handleExportExcel}
+          className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg flex items-center gap-1.5 transition-colors"
+          title="Export to Excel"
+        >
+          <Download className="w-4 h-4" />
+          Export
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -248,6 +361,79 @@ export const DetailsTable: React.FC<DetailsTableProps> = ({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-100">
+              {/* All Categories Summary Row */}
+              {(() => {
+                // Calculate totals for All Categories
+                const allTotalSales = filteredCategories.reduce((sum, c) => sum + c.totalSales, 0);
+                const allTotalOrders = filteredCategories.reduce((sum, c) => sum + c.totalOrders, 0);
+                const allTotalProducts = filteredCategories.reduce((sum, c) => sum + c.totalProducts, 0);
+                const allTotalQuantity = detailsProducts.reduce((sum: number, p: any) =>
+                  sum + p.variants.reduce((s: number, v: any) => s + v.quantity, 0), 0);
+                const allFbaFees = filteredCategories.reduce((sum, c) => sum + c.fbaFees, 0);
+                const allSellingFees = filteredCategories.reduce((sum, c) => sum + c.sellingFees, 0);
+                const allRefundLoss = filteredCategories.reduce((sum, c) => sum + c.totalRefundLoss, 0);
+                const allFbaSales = detailsProducts.reduce((sum: number, p: any) => sum + (p.fbaSales || 0), 0);
+
+                const allFbaFeePercent = allFbaSales > 0 ? (allFbaFees / allFbaSales) * 100 : 0;
+                const allSellingFeePercent = allTotalSales > 0 ? (allSellingFees / allTotalSales) * 100 : 0;
+                const allRefundLossPercent = allTotalSales > 0 ? (allRefundLoss / allTotalSales) * 100 : 0;
+
+                // Comparison data for All Categories
+                const prevTotalSales = comparisonCategories.reduce((sum, c) => sum + c.totalSales, 0);
+
+                // All Categories data for modal
+                const allCategoriesData = {
+                  name: 'All Categories',
+                  category: 'All Categories',
+                  totalSales: allTotalSales,
+                  totalOrders: allTotalOrders,
+                  variants: detailsProducts.flatMap((p: any) => p.variants),
+                  sellingFees: allSellingFees,
+                  fbaFees: allFbaFees,
+                  fbaSales: allFbaSales,
+                  totalRefundLoss: allRefundLoss
+                };
+
+                return (
+                  <tr className="hover:bg-indigo-50 bg-indigo-50/30 border-b-2 border-indigo-200">
+                    <td className="px-3 py-3 text-left">
+                      <div
+                        className="font-bold text-indigo-700 cursor-pointer text-sm hover:underline"
+                        onClick={() => handleProductClick(allCategoriesData, 'category')}
+                      >
+                        All Categories
+                      </div>
+                      <div className="text-[10px] text-indigo-500">Click for breakdown</div>
+                    </td>
+                    <td className="px-3 py-3 text-right font-bold text-indigo-700 text-sm">
+                      {formatMoney(allTotalSales)}
+                    </td>
+                    {comparisonMode !== 'none' && (
+                      <td className="px-3 py-3 text-center">
+                        {prevTotalSales > 0 && (
+                          <ComparisonBadge current={allTotalSales} previous={prevTotalSales} />
+                        )}
+                      </td>
+                    )}
+                    <td className="px-3 py-3 text-right text-sm text-slate-600">{allTotalOrders}</td>
+                    <td className="px-3 py-3 text-right text-sm text-slate-600">{allTotalQuantity}</td>
+                    <td className="px-3 py-3 text-right text-sm text-slate-600">{allTotalProducts}</td>
+                    <td className="px-3 py-3 text-right text-sm">
+                      <div className="text-slate-800">{formatMoney(allFbaFees)}</div>
+                      <div className="text-xs text-slate-500">{formatPercent(allFbaFeePercent)}</div>
+                    </td>
+                    <td className="px-3 py-3 text-right text-sm">
+                      <div className="text-slate-800">{formatMoney(allSellingFees)}</div>
+                      <div className="text-xs text-slate-500">{formatPercent(allSellingFeePercent)}</div>
+                    </td>
+                    <td className="px-3 py-3 text-right text-sm">
+                      <div className="text-red-600">{formatMoney(allRefundLoss)}</div>
+                      <div className="text-xs text-red-500">{formatPercent(allRefundLossPercent)}</div>
+                    </td>
+                  </tr>
+                );
+              })()}
+              {/* Individual Category Rows */}
               {(() => {
                 // Use memoized filteredCategories
                 return filteredCategories

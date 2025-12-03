@@ -7,8 +7,26 @@
 
 import { TransactionData, MarketplaceCode } from '../../types/transaction';
 import { ProductCostData, ShippingRateTable, AllCountryConfigs, ShippingCurrency } from '../../types/profitability';
+import type {
+  ProductProfitAnalysis,
+  CategoryProfitAnalysis,
+  ParentProfitAnalysis,
+  SKUProfitAnalysis,
+  ProfitabilitySummaryStats,
+  GlobalCostPercentages,
+} from '../../types/profitabilityAnalysis';
 import { getShippingRate, getShippingRouteForMarketplace, getUSFBMShippingRate } from './configService';
 import { convertCurrency, CurrencyCode, getMarketplaceCurrency } from '../../utils/currencyExchange';
+
+// Re-export types from centralized location
+export type {
+  ProductProfitAnalysis,
+  CategoryProfitAnalysis,
+  ParentProfitAnalysis,
+  SKUProfitAnalysis,
+  ProfitabilitySummaryStats,
+  GlobalCostPercentages,
+} from '../../types/profitabilityAnalysis';
 
 // Cost verileri için varsayılan para birimi (Excel'den gelen maliyetler USD olarak kabul edilir)
 const COST_DATA_CURRENCY: CurrencyCode = 'USD';
@@ -21,309 +39,6 @@ const shippingCurrencyToCurrencyCode = (sc: ShippingCurrency): CurrencyCode => {
   if (sc === 'EUR') return 'EUR';
   return 'USD';
 };
-
-// ============================================
-// TYPES
-// ============================================
-
-export interface ProductProfitAnalysis {
-  // Product info (NAME based)
-  name: string;
-  asin: string;
-  parent: string;
-  category: string;
-  skus: string[];
-  fulfillment: 'FBA' | 'FBM' | 'Mixed';
-
-  // Sales metrics
-  totalRevenue: number;
-  totalOrders: number;
-  totalQuantity: number;
-  refundedQuantity: number;
-  avgSalePrice: number;
-
-  // Fulfillment breakdown
-  fbaRevenue: number;
-  fbmRevenue: number;
-  fbaQuantity: number;
-  fbmQuantity: number;
-
-  // Amazon Fees (actual from transactions)
-  sellingFees: number;
-  fbaFees: number;
-  refundLoss: number;
-  vat: number;
-  totalAmazonFees: number;
-
-  // Calculated costs (from config)
-  productCost: number;
-  totalProductCost: number;
-  shippingCost: number;
-  customsDuty: number;
-  ddpFee: number;
-  warehouseCost: number;
-  othersCost: number;
-  gstCost: number;
-
-  // Global costs (applied from percentages)
-  advertisingCost: number;
-  fbaCost: number;
-  fbmCost: number;
-
-  // Profitability
-  grossProfit: number;
-  netProfit: number;
-  profitMargin: number;
-  roi: number;
-
-  // Percentages
-  sellingFeePercent: number;
-  fbaFeePercent: number;
-  refundLossPercent: number;
-  vatPercent: number;
-  productCostPercent: number;
-  shippingCostPercent: number;
-  advertisingPercent: number;
-  fbaCostPercent: number;
-  fbmCostPercent: number;
-  othersCostPercent: number;
-  gstCostPercent: number;
-
-  // Flags
-  hasCostData: boolean;
-  hasSizeData: boolean;
-  desi: number | null;
-}
-
-export interface CategoryProfitAnalysis {
-  category: string;
-  parents: string[];  // Bu category'deki Parent'lar
-  fulfillment: 'FBA' | 'FBM' | 'Mixed';
-
-  // Aggregated metrics
-  totalParents: number;   // Parent sayısı
-  totalProducts: number;  // NAME sayısı
-  totalRevenue: number;
-  totalOrders: number;
-  totalQuantity: number;
-  refundedQuantity: number;
-  avgSalePrice: number;
-
-  // Fulfillment breakdown
-  fbaRevenue: number;
-  fbmRevenue: number;
-  fbaQuantity: number;
-  fbmQuantity: number;
-
-  // Amazon Fees
-  sellingFees: number;
-  fbaFees: number;
-  refundLoss: number;
-  vat: number;
-  totalAmazonFees: number;
-
-  // Costs
-  productCost: number;       // Avg unit cost
-  totalProductCost: number;
-  shippingCost: number;
-  customsDuty: number;
-  ddpFee: number;
-  warehouseCost: number;
-  othersCost: number;
-  gstCost: number;
-
-  // Global costs
-  advertisingCost: number;
-  fbaCost: number;
-  fbmCost: number;
-
-  // Profitability
-  grossProfit: number;
-  netProfit: number;
-  profitMargin: number;
-  roi: number;
-
-  // Percentages
-  sellingFeePercent: number;
-  fbaFeePercent: number;
-  refundLossPercent: number;
-  vatPercent: number;
-  productCostPercent: number;
-  shippingCostPercent: number;
-  advertisingPercent: number;
-  fbaCostPercent: number;
-  fbmCostPercent: number;
-  othersCostPercent: number;
-  gstCostPercent: number;
-
-  // Flags
-  hasCostData: boolean;
-  hasSizeData: boolean;
-
-  // Top products
-  topProducts: Array<{
-    name: string;
-    revenue: number;
-    netProfit: number;
-    profitMargin: number;
-  }>;
-}
-
-export interface ParentProfitAnalysis {
-  parent: string;
-  category: string;
-  names: string[];  // Bu parent'a ait NAME'ler
-  fulfillment: 'FBA' | 'FBM' | 'Mixed';
-
-  // Aggregated metrics
-  totalProducts: number;  // NAME sayısı
-  totalRevenue: number;
-  totalOrders: number;
-  totalQuantity: number;
-  refundedQuantity: number;
-  avgSalePrice: number;
-
-  // Fulfillment breakdown
-  fbaRevenue: number;
-  fbmRevenue: number;
-  fbaQuantity: number;
-  fbmQuantity: number;
-
-  // Amazon Fees
-  sellingFees: number;
-  fbaFees: number;
-  refundLoss: number;
-  vat: number;
-  totalAmazonFees: number;
-
-  // Costs
-  productCost: number;       // Avg unit cost
-  totalProductCost: number;
-  shippingCost: number;
-  customsDuty: number;
-  ddpFee: number;
-  warehouseCost: number;
-  othersCost: number;
-  gstCost: number;
-
-  // Global costs
-  advertisingCost: number;
-  fbaCost: number;
-  fbmCost: number;
-
-  // Profitability
-  grossProfit: number;
-  netProfit: number;
-  profitMargin: number;
-  roi: number;
-
-  // Percentages
-  sellingFeePercent: number;
-  fbaFeePercent: number;
-  refundLossPercent: number;
-  vatPercent: number;
-  productCostPercent: number;
-  shippingCostPercent: number;
-  advertisingPercent: number;
-  fbaCostPercent: number;
-  fbmCostPercent: number;
-  othersCostPercent: number;
-  gstCostPercent: number;
-
-  // Flags
-  hasCostData: boolean;
-  hasSizeData: boolean;
-}
-
-export interface SKUProfitAnalysis {
-  sku: string;
-  name: string;
-  parent: string;
-  category: string;
-  fulfillment: 'FBA' | 'FBM' | 'Mixed';
-
-  // Sales metrics
-  totalRevenue: number;
-  totalOrders: number;
-  totalQuantity: number;
-  refundedQuantity: number;
-  avgSalePrice: number;
-
-  // Amazon Fees (actual from transactions)
-  sellingFees: number;
-  fbaFees: number;
-  refundLoss: number;
-  vat: number;                // VAT from transactions (EU marketplaces)
-  totalAmazonFees: number;
-
-  // Calculated costs (from config)
-  productCost: number;
-  totalProductCost: number;
-  shippingCost: number;
-  customsDuty: number;
-  ddpFee: number;
-  warehouseCost: number;      // Depo+İşçilik maliyeti
-  othersCost: number;         // FBA: depo+işçilik, FBM: kaynak bazlı (TR=vergi+ddp, US=depo, BOTH=ortalama)
-  gstCost: number;            // Non-Amazon GST obligation (AU için - fiyat içinden hesaplanır)
-
-  // Global costs (applied from percentages)
-  advertisingCost: number;
-  fbaCost: number;
-  fbmCost: number;
-
-  // Profitability
-  grossProfit: number;
-  netProfit: number;
-  profitMargin: number;
-  roi: number;
-
-  // Percentages
-  sellingFeePercent: number;
-  fbaFeePercent: number;
-  refundLossPercent: number;
-  vatPercent: number;
-  productCostPercent: number;
-  shippingCostPercent: number;
-  advertisingPercent: number;
-  fbaCostPercent: number;
-  fbmCostPercent: number;
-  othersCostPercent: number;
-  gstCostPercent: number;
-
-  // Flags
-  hasCostData: boolean;
-  hasSizeData: boolean;
-  desi: number | null;
-}
-
-export interface ProfitabilitySummaryStats {
-  totalRevenue: number;
-  totalOrders: number;
-  totalQuantity: number;
-
-  // Amazon Fees
-  totalSellingFees: number;
-  totalFbaFees: number;
-  totalRefundLoss: number;
-  totalAmazonFees: number;
-
-  // Costs
-  totalProductCost: number;
-  totalShippingCost: number;
-  totalCustomsDuty: number;
-  totalCosts: number;
-
-  // Profit
-  grossProfit: number;
-  netProfit: number;
-  profitMargin: number;
-
-  // Products
-  totalProducts: number;
-  profitableProducts: number;
-  unprofitableProducts: number;
-  unknownProducts: number; // No cost data
-}
 
 // ============================================
 // HELPER FUNCTIONS
@@ -706,16 +421,6 @@ export const calculateCategoryProfitability = (
 };
 
 /**
- * Global cost percentages calculated from all transactions
- */
-export interface GlobalCostPercentages {
-  advertisingPercent: number;  // Ads % = Advertising cost / Total sales
-  fbaCostPercent: number;      // FBA Cost % = FBA expenses / FBA sales
-  fbmCostPercent: number;      // FBM Cost % = FBM expenses / FBM sales
-  refundRecoveryRate: number;  // İade kurtarma oranı (0-1), örn: 0.30 = %30 kurtarılır
-}
-
-/**
  * Calculate profitability by SKU (lowest level - most granular)
  * SKU level gives clear FBA/FBM distinction
  */
@@ -725,18 +430,30 @@ export const calculateSKUProfitability = (
   shippingRates: ShippingRateTable | null,
   countryConfigs: AllCountryConfigs | null,
   marketplace: MarketplaceCode | null,
-  globalCostPercentages?: GlobalCostPercentages
+  globalCostPercentages?: GlobalCostPercentages,
+  groupByMarketplace: boolean = false  // When true, same SKU in different marketplaces = separate entries
 ): SKUProfitAnalysis[] => {
   // Create cost lookup by SKU
   const costBySku = new Map<string, ProductCostData>();
   costData.forEach(c => costBySku.set(c.sku, c));
 
-  // Group transactions by SKU
+  // EU/UK VAT rates and thresholds for seller-owed VAT calculation
+  // When Amazon doesn't collect VAT (FBM orders > €150/£135), seller owes it
+  const EU_UK_VAT_CONFIG: Record<string, { rate: number; threshold: number }> = {
+    UK: { rate: 20, threshold: 135 },  // £135
+    DE: { rate: 19, threshold: 150 },  // €150
+    FR: { rate: 20, threshold: 150 },
+    IT: { rate: 22, threshold: 150 },
+    ES: { rate: 21, threshold: 150 },
+  };
+
+  // Group transactions by SKU (and optionally by marketplace)
   const skuMap = new Map<string, {
     sku: string;
     name: string;
     parent: string;
     category: string;
+    marketplace: string | null;  // Track marketplace when groupByMarketplace is true
     fulfillment: Set<string>;
     revenue: number;
     orders: number;
@@ -746,15 +463,18 @@ export const calculateSKUProfitability = (
     fbaFees: number;
     vat: number;              // VAT from transactions (EU marketplaces)
     totalRefund: number;  // Toplam iade tutarı (henüz recovery uygulanmamış)
+    sellerOwedVat: number;    // VAT seller owes for high-value FBM orders where Amazon didn't collect
   }>();
 
   transactions.forEach(t => {
     if (!t.sku) return;
 
-    // Filter by marketplace if specified
-    if (marketplace && t.marketplaceCode !== marketplace) return;
+    // Filter by marketplace if specified (only when not grouping by marketplace)
+    if (!groupByMarketplace && marketplace && t.marketplaceCode !== marketplace) return;
 
-    const existing = skuMap.get(t.sku);
+    // Create unique key: SKU only, or SKU + marketplace when grouping
+    const mapKey = groupByMarketplace ? `${t.sku}::${t.marketplaceCode || 'UNKNOWN'}` : t.sku;
+    const existing = skuMap.get(mapKey);
 
     // Determine category using same logic as productAnalytics
     let category = t.productCategory;
@@ -768,21 +488,40 @@ export const calculateSKUProfitability = (
     // Only process Order and Refund transactions
     if (t.categoryType !== 'Order' && t.categoryType !== 'Refund') return;
 
+    // Calculate seller-owed VAT for EU/UK FBM orders above threshold where Amazon didn't collect VAT
+    let transactionSellerOwedVat = 0;
+    if (t.categoryType === 'Order') {
+      const isFbm = t.fulfillment === 'FBM' || t.fulfillment === 'MFN';
+      const vatConfig = EU_UK_VAT_CONFIG[t.marketplaceCode || ''];
+      const transactionVat = Math.abs(t.vat || 0);
+      const productSales = t.productSales || 0;
+
+      // If FBM, EU/UK marketplace, sales > threshold, and Amazon didn't collect VAT (or very little)
+      if (isFbm && vatConfig && productSales > vatConfig.threshold && transactionVat < 1) {
+        // VAT is included in price, so extract it: revenue * (rate / (100 + rate))
+        transactionSellerOwedVat = productSales * (vatConfig.rate / (100 + vatConfig.rate));
+      }
+    }
+
     if (!existing) {
-      skuMap.set(t.sku, {
+      const isOrder = t.categoryType === 'Order';
+
+      skuMap.set(mapKey, {
         sku: t.sku,
         name: t.name || t.sku,
         parent: t.parent || t.asin || 'Unknown',
         category,
+        marketplace: groupByMarketplace ? (t.marketplaceCode || null) : null,
         fulfillment: new Set([t.fulfillment || 'Unknown']),
-        revenue: t.categoryType === 'Order' ? (t.productSales || 0) : 0,
-        orders: t.categoryType === 'Order' ? 1 : 0,
-        quantity: t.categoryType === 'Order' ? (t.quantity || 0) : 0,
+        revenue: isOrder ? (t.productSales || 0) : 0,
+        orders: isOrder ? 1 : 0,
+        quantity: isOrder ? (t.quantity || 0) : 0,
         refundedQuantity: t.categoryType === 'Refund' ? Math.abs(t.quantity || 0) : 0,
-        sellingFees: t.categoryType === 'Order' ? Math.abs(t.sellingFees || 0) : 0,
-        fbaFees: t.categoryType === 'Order' ? Math.abs(t.fbaFees || 0) : 0,
-        vat: t.categoryType === 'Order' ? Math.abs(t.vat || 0) : 0,
+        sellingFees: isOrder ? Math.abs(t.sellingFees || 0) : 0,
+        fbaFees: isOrder ? Math.abs(t.fbaFees || 0) : 0,
+        vat: isOrder ? Math.abs(t.vat || 0) : 0,
         totalRefund: t.categoryType === 'Refund' ? Math.abs(t.total || 0) : 0,
+        sellerOwedVat: transactionSellerOwedVat,
       });
     } else {
       if (t.fulfillment) existing.fulfillment.add(t.fulfillment);
@@ -794,6 +533,7 @@ export const calculateSKUProfitability = (
         existing.sellingFees += Math.abs(t.sellingFees || 0);
         existing.fbaFees += Math.abs(t.fbaFees || 0);
         existing.vat += Math.abs(t.vat || 0);
+        existing.sellerOwedVat += transactionSellerOwedVat;
       } else if (t.categoryType === 'Refund') {
         existing.totalRefund += Math.abs(t.total || 0);
         existing.refundedQuantity += Math.abs(t.quantity || 0);
@@ -804,11 +544,15 @@ export const calculateSKUProfitability = (
   // Convert to SKUProfitAnalysis
   const results: SKUProfitAnalysis[] = [];
 
-  // Hedef para birimi belirleme
-  const targetCurrency: CurrencyCode = marketplace ? getMarketplaceCurrency(marketplace) : 'USD';
+  skuMap.forEach((data, mapKey) => {
+    // Hedef para birimi belirleme - groupByMarketplace modunda her SKU kendi marketplace'ine göre
+    const effectiveMarketplace = groupByMarketplace
+      ? (data.marketplace as MarketplaceCode | null)
+      : marketplace;
+    const targetCurrency: CurrencyCode = effectiveMarketplace ? getMarketplaceCurrency(effectiveMarketplace) : 'USD';
 
-  skuMap.forEach((data, sku) => {
-    const costInfo = costBySku.get(sku);
+    // Cost lookup uses actual SKU (not mapKey which may include marketplace suffix)
+    const costInfo = costBySku.get(data.sku);
     const unitCostRaw = costInfo?.cost ?? null;
     // Cost verisini hedef para birimine dönüştür (Excel'den gelen maliyetler USD olarak kabul edilir)
     const unitCost = unitCostRaw !== null ? convertCurrency(unitCostRaw, COST_DATA_CURRENCY, targetCurrency) : null;
@@ -821,13 +565,20 @@ export const calculateSKUProfitability = (
     let hasSizeData = desi !== null || customShippingRaw !== null; // customShipping varsa desi gerekmez
 
     // Determine fulfillment type
+    // Amazon uses: AFN = Amazon Fulfilled Network (FBA), MFN = Merchant Fulfilled Network (FBM)
     const fulfillmentTypes = Array.from(data.fulfillment);
     let fulfillment: 'FBA' | 'FBM' | 'Mixed' = 'FBM';
-    if (fulfillmentTypes.length > 1 && fulfillmentTypes.includes('FBA') && (fulfillmentTypes.includes('FBM') || fulfillmentTypes.includes('MFN'))) {
+
+    // Check for Mixed: has both FBA-type AND FBM-type transactions
+    const hasFBAType = fulfillmentTypes.some(f => f === 'FBA' || f === 'AFN');
+    const hasFBMType = fulfillmentTypes.some(f => f === 'FBM' || f === 'MFN');
+
+    if (hasFBAType && hasFBMType) {
       fulfillment = 'Mixed';
-    } else if (fulfillmentTypes.includes('FBA') || fulfillmentTypes.includes('AFN')) {
+    } else if (hasFBAType) {
       fulfillment = 'FBA';
     }
+    // else: stays as default 'FBM' (includes MFN, Unknown, or empty)
 
     // Calculate shipping cost
     let shippingCost = 0;
@@ -854,7 +605,7 @@ export const calculateSKUProfitability = (
       // Eğer customShipping varsa, US içi kargo ücreti olarak kullan (zaten dönüştürüldü)
       // LOCAL modunda: desi * gemi bedeli + customShipping
       // BOTH modunda: ((desi * gemi + customShipping) + TR kargo) / 2
-      if (customShipping !== null && marketplace === 'US') {
+      if (customShipping !== null && effectiveMarketplace === 'US') {
         const toWarehouseCost = desi ? desi * fbaShippingPerDesiConverted : 0; // Gemi bedeli
         const localTotal = toWarehouseCost + customShipping; // LOCAL toplam (customShipping zaten dönüştürüldü)
 
@@ -873,7 +624,7 @@ export const calculateSKUProfitability = (
           const trRateConverted = trResult.found ? convertCurrency(trResult.rate, shippingCurrencyToCurrencyCode(trResult.currency), targetCurrency) : 0;
           const avgShipping = (localTotal + trRateConverted) / 2;
 
-          const dutyPercent = getCustomsDutyPercent(countryConfigs!, marketplace!, data.category);
+          const dutyPercent = getCustomsDutyPercent(countryConfigs!, effectiveMarketplace!, data.category);
           const avgPrice = data.quantity > 0 ? data.revenue / data.quantity : 0;
           return {
             shipping: avgShipping * qty,
@@ -888,7 +639,7 @@ export const calculateSKUProfitability = (
             return { shipping: 0, customs: 0, ddp: 0, found: false };
           }
           const trRateConverted = convertCurrency(trResult.rate, shippingCurrencyToCurrencyCode(trResult.currency), targetCurrency);
-          const dutyPercent = getCustomsDutyPercent(countryConfigs!, marketplace!, data.category);
+          const dutyPercent = getCustomsDutyPercent(countryConfigs!, effectiveMarketplace!, data.category);
           const avgPrice = data.quantity > 0 ? data.revenue / data.quantity : 0;
           return {
             shipping: trRateConverted * qty,
@@ -902,7 +653,7 @@ export const calculateSKUProfitability = (
       // Diğer marketplace'ler için customShipping varsa direkt kullan (zaten dönüştürüldü)
       if (customShipping !== null) {
         const shipping = customShipping * qty;
-        const dutyPercent = getCustomsDutyPercent(countryConfigs!, marketplace!, data.category);
+        const dutyPercent = getCustomsDutyPercent(countryConfigs!, effectiveMarketplace!, data.category);
         const avgPrice = data.quantity > 0 ? data.revenue / data.quantity : 0;
         return {
           shipping,
@@ -915,7 +666,7 @@ export const calculateSKUProfitability = (
       // Normal desi bazlı hesaplama
       if (!desi) return { shipping: 0, customs: 0, ddp: 0, found: false };
 
-      if (marketplace === 'US') {
+      if (effectiveMarketplace === 'US') {
         // FBA shipping per desi (gemi bedeli) - LOCAL modunda TR'den depoya gönderim için kullanılır
         const shippingResult = getUSFBMShippingRate(shippingRates!, desi, normalizedMode, config?.fba.shippingPerDesi || 0);
         if (!shippingResult.found) {
@@ -925,7 +676,7 @@ export const calculateSKUProfitability = (
         const shippingRateConverted = convertCurrency(shippingResult.rate, shippingCurrencyToCurrencyCode(shippingResult.currency), targetCurrency);
         const shipping = shippingRateConverted * qty;
         if (normalizedMode === 'TR' || normalizedMode === 'BOTH') {
-          const dutyPercent = getCustomsDutyPercent(countryConfigs!, marketplace!, data.category);
+          const dutyPercent = getCustomsDutyPercent(countryConfigs!, effectiveMarketplace!, data.category);
           const avgPrice = data.quantity > 0 ? data.revenue / data.quantity : 0;
           const multiplier = normalizedMode === 'BOTH' ? 0.5 : 1;
           return {
@@ -937,14 +688,14 @@ export const calculateSKUProfitability = (
         }
         return { shipping, customs: 0, ddp: 0, found: true };
       } else {
-        const route = getShippingRouteForMarketplace(marketplace!);
+        const route = getShippingRouteForMarketplace(effectiveMarketplace!);
         const shippingResult = getShippingRate(shippingRates!, route, desi);
         if (!shippingResult.found) {
           return { shipping: 0, customs: 0, ddp: 0, found: false };
         }
         // Shipping rate'i dönüştür
         const shippingRateConverted = convertCurrency(shippingResult.rate, shippingCurrencyToCurrencyCode(shippingResult.currency), targetCurrency);
-        const dutyPercent = getCustomsDutyPercent(countryConfigs!, marketplace!, data.category);
+        const dutyPercent = getCustomsDutyPercent(countryConfigs!, effectiveMarketplace!, data.category);
         const avgPrice = data.quantity > 0 ? data.revenue / data.quantity : 0;
         return {
           shipping: shippingRateConverted * qty,
@@ -955,8 +706,9 @@ export const calculateSKUProfitability = (
       }
     };
 
-    if (shippingRates && countryConfigs && marketplace) {
-      const config = countryConfigs.configs[marketplace];
+    // Use marketplace for cost calculations
+    if (shippingRates && countryConfigs && effectiveMarketplace) {
+      const config = countryConfigs.configs[effectiveMarketplace];
 
       // shippingPerDesi USD olarak varsayılıyor, hedef para birimine dönüştür
       const shippingPerDesiConverted = convertCurrency(config?.fba.shippingPerDesi || 0, COST_DATA_CURRENCY, targetCurrency);
@@ -970,7 +722,9 @@ export const calculateSKUProfitability = (
         // FBM shipping + customs
         if (config) {
           // SKU bazlı fbmSource varsa onu kullan, yoksa global config'den al
-          const effectiveMode = skuFbmSource || config.fbm.shippingMode;
+          // NOT: LOCAL/BOTH mode sadece US için geçerli, diğer ülkelerde her zaman TR
+          const configMode = skuFbmSource || config.fbm.shippingMode;
+          const effectiveMode = effectiveMarketplace === 'US' ? configMode : 'TR';
           const result = calculateFBMShipping(data.quantity, effectiveMode, config);
           shippingCost = result.shipping;
           customsDuty = result.customs;
@@ -989,7 +743,9 @@ export const calculateSKUProfitability = (
 
         // FBM portion
         if (config) {
-          const effectiveMode = skuFbmSource || config.fbm.shippingMode;
+          // NOT: LOCAL/BOTH mode sadece US için geçerli, diğer ülkelerde her zaman TR
+          const configMode = skuFbmSource || config.fbm.shippingMode;
+          const effectiveMode = effectiveMarketplace === 'US' ? configMode : 'TR';
           const result = calculateFBMShipping(fbmQty, effectiveMode, config);
           shippingCost += result.shipping;
           customsDuty = result.customs;
@@ -1040,12 +796,12 @@ export const calculateSKUProfitability = (
     let warehouseCost = 0;
     let othersCost = 0;
 
-    if (countryConfigs && marketplace) {
-      const config = countryConfigs.configs[marketplace];
+    if (countryConfigs && effectiveMarketplace) {
+      const config = countryConfigs.configs[effectiveMarketplace];
 
       if (fulfillment === 'FBA') {
         // FBA: Others = Depo+İşçilik (warehouse %) - SADECE US için geçerli
-        if (marketplace === 'US') {
+        if (effectiveMarketplace === 'US') {
           const warehousePercent = config?.fba.warehousePercent || 0;
           warehouseCost = data.revenue * (warehousePercent / 100);
           othersCost = warehouseCost;
@@ -1076,7 +832,7 @@ export const calculateSKUProfitability = (
         // Mixed: FBA ve FBM karışımı (50/50)
         // FBA kısmı için warehouse - SADECE US için geçerli
         let fbaWarehouseCost = 0;
-        if (marketplace === 'US') {
+        if (effectiveMarketplace === 'US') {
           const fbaWarehousePercent = config?.fba.warehousePercent || 0;
           fbaWarehouseCost = (data.revenue / 2) * (fbaWarehousePercent / 100);
         }
@@ -1103,25 +859,45 @@ export const calculateSKUProfitability = (
       }
     }
 
-    // Calculate GST cost for non-Amazon tax obligations (e.g., AU GST)
-    // GST is a Non-Amazon expense when seller is GST-registered (like AU with ABN+GST)
-    // Formula: If price includes GST, GST = revenue * (rate / (100 + rate))
-    // Example: AU 10% GST, $110 price → GST = $110 * (10/110) = $10
+    // GST/VAT handling (seller-owed taxes not collected by Amazon):
+    // - AU: GST for FBA (default), configurable via applyTo
+    // - AE (UAE): VAT for FBA+FBM (Amazon doesn't collect), configurable via applyTo
+    // - SA: VAT for FBA+FBM (mandatory for non-resident sellers), configurable via applyTo
+    // - EU/UK FBM > €150/£135: Amazon doesn't collect VAT, seller owes it (already calculated per transaction)
     let gstCost = 0;
-    if (countryConfigs && marketplace) {
-      const config = countryConfigs.configs[marketplace];
+
+    // GST/VAT for AU, AE, SA - based on applyTo setting
+    if (countryConfigs && (effectiveMarketplace === 'AU' || effectiveMarketplace === 'AE' || effectiveMarketplace === 'SA')) {
+      const config = countryConfigs.configs[effectiveMarketplace];
       if (config?.gst?.enabled && config.gst.ratePercent > 0) {
-        if (config.gst.includedInPrice) {
-          // GST is included in price - extract it
-          gstCost = data.revenue * (config.gst.ratePercent / (100 + config.gst.ratePercent));
-        } else {
-          // GST is on top of price
-          gstCost = data.revenue * (config.gst.ratePercent / 100);
+        // Default applyTo values: AU=FBA, AE=BOTH, SA=BOTH
+        const defaultApplyTo = effectiveMarketplace === 'AU' ? 'FBA' : 'BOTH';
+        const applyTo = config.gst.applyTo ?? defaultApplyTo;
+
+        // Check if GST/VAT should be applied to this fulfillment type
+        const shouldApply =
+          applyTo === 'BOTH' ||
+          (applyTo === 'FBA' && (fulfillment === 'FBA' || fulfillment === 'Mixed')) ||
+          (applyTo === 'FBM' && (fulfillment === 'FBM' || fulfillment === 'Mixed'));
+
+        if (shouldApply) {
+          const gstRate = config.gst.ratePercent;
+          // For Mixed fulfillment with FBA or FBM only setting, apply to half
+          const multiplier = (fulfillment === 'Mixed' && applyTo !== 'BOTH') ? 0.5 : 1;
+
+          if (config.gst.includedInPrice) {
+            gstCost = data.revenue * (gstRate / (100 + gstRate)) * multiplier;
+          } else {
+            gstCost = data.revenue * (gstRate / 100) * multiplier;
+          }
         }
       }
     }
 
-    // Total costs including global costs, others, and GST
+    // Add EU/UK seller-owed VAT for high-value FBM orders
+    gstCost += data.sellerOwedVat;
+
+    // Total costs including global costs and GST
     const totalCosts = totalProductCost + shippingCost + customsDuty + ddpFee + advertisingCost + fbaCost + fbmCost + warehouseCost + gstCost;
     const netProfit = hasCostData ? grossProfit - totalCosts : 0;
     const profitMargin = data.revenue > 0 && hasCostData ? (netProfit / data.revenue) * 100 : 0;
@@ -1138,10 +914,11 @@ export const calculateSKUProfitability = (
     const gstCostPercent = data.revenue > 0 ? (gstCost / data.revenue) * 100 : 0;
 
     results.push({
-      sku,
+      sku: data.sku,
       name: data.name,
       parent: data.parent,
       category: data.category,
+      marketplace: effectiveMarketplace || undefined, // Track marketplace for breakdown modal
       fulfillment,
       totalRevenue: data.revenue,
       totalOrders: data.orders,
@@ -1160,7 +937,7 @@ export const calculateSKUProfitability = (
       ddpFee,
       warehouseCost,
       othersCost,
-      gstCost,
+      gstCost, // Only for AU FBA
       advertisingCost,
       fbaCost,
       fbmCost,

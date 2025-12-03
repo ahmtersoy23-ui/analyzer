@@ -83,13 +83,7 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Expanded sections
-  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
-  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-
-  // Collapsible sections
-  const [showTop20Products, setShowTop20Products] = useState(false);
-  const [showTop20Parents, setShowTop20Parents] = useState(false);
 
   // Details view mode
   const [detailsViewMode, setDetailsViewMode] = useState<'category' | 'parent' | 'name'>('name');
@@ -105,7 +99,7 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
   // COMPARISON HELPERS
   // ============================================================================
 
-  const calculateComparisonDateRange = (): { start: Date; end: Date } | null => {
+  const comparisonDateRange = useMemo((): { start: Date; end: Date } | null => {
     if (!startDate || !endDate || comparisonMode === 'none') return null;
 
     const currentStart = new Date(startDate);
@@ -126,9 +120,7 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
       prevEnd.setFullYear(prevEnd.getFullYear() - 1);
       return { start: prevStart, end: prevEnd };
     }
-  };
-
-  const comparisonDateRange = calculateComparisonDateRange();
+  }, [startDate, endDate, comparisonMode]);
 
   // ============================================================================
   // COMPUTED - Global Costs (with proportional advertising based on fulfillment)
@@ -336,13 +328,6 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
     return Array.from(new Set(filteredProducts.map(p => p.name))).sort();
   }, [products, selectedCategory, selectedParent]);
 
-  // ============================================================================
-  // COMPUTED - Top 20 Products & Parents
-  // ============================================================================
-
-  const top20Products = useMemo(() => products.slice(0, 20), [products]);
-  const top20Parents = useMemo(() => parents.slice(0, 20), [parents]);
-
   // Comparison parents (for previous period/year)
   const comparisonParents = useMemo(() =>
     comparisonDateRange ? calculateParentAnalytics(comparisonProducts) : [],
@@ -471,26 +456,6 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
       }
     });
   }, []);
-
-  const toggleProduct = (name: string) => {
-    const newExpanded = new Set(expandedProducts);
-    if (newExpanded.has(name)) {
-      newExpanded.delete(name);
-    } else {
-      newExpanded.add(name);
-    }
-    setExpandedProducts(newExpanded);
-  };
-
-  const toggleParent = (parent: string) => {
-    const newExpanded = new Set(expandedParents);
-    if (newExpanded.has(parent)) {
-      newExpanded.delete(parent);
-    } else {
-      newExpanded.add(parent);
-    }
-    setExpandedParents(newExpanded);
-  };
 
   const toggleCategory = (category: string) => {
     const newExpanded = new Set(expandedCategories);
@@ -654,166 +619,6 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
           </div>
         </div>
 
-        {/* Top 20 Products - Collapsible */}
-        <div className="bg-white rounded-xl shadow-sm mb-6">
-          <button
-            onClick={() => setShowTop20Products(!showTop20Products)}
-            className="w-full p-6 flex items-center justify-between hover:bg-slate-50 transition-colors rounded-xl"
-          >
-            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-blue-600" />
-              Top 20 Products
-            </h2>
-            {showTop20Products ? (
-              <ChevronUp className="w-5 h-5 text-slate-400" />
-            ) : (
-              <ChevronDown className="w-5 h-5 text-slate-400" />
-            )}
-          </button>
-
-          {showTop20Products && (
-          <div className="px-6 pb-6 space-y-2">
-            {top20Products.map((product, idx) => {
-              const prevProduct = comparisonProductMap.get(product.name);
-
-              return (
-              <div key={product.name}>
-                <div
-                  className="flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 cursor-pointer transition"
-                  onClick={() => toggleProduct(product.name)}
-                >
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className="text-sm font-bold text-slate-400 w-8">#{idx + 1}</div>
-                    <div className="text-left">
-                      <div className="font-medium text-slate-800">{product.name}</div>
-                      <div className="text-xs text-slate-500">
-                        {product.category} · ASIN: {product.asin}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right mr-4 flex items-center gap-2">
-                    <div>
-                      <div className="font-bold text-slate-800">{formatMoney(product.totalSales)}</div>
-                      <div className="text-xs text-slate-500">
-                        {product.totalOrders} orders · {product.variants.length} variants
-                      </div>
-                    </div>
-                    {comparisonMode !== 'none' && prevProduct && (
-                      <ComparisonBadge current={product.totalSales} previous={prevProduct.totalSales} />
-                    )}
-                  </div>
-                  {expandedProducts.has(product.name) ? (
-                    <ChevronUp className="w-5 h-5 text-slate-400" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-slate-400" />
-                  )}
-                </div>
-
-                {/* Expanded: Variants */}
-                {expandedProducts.has(product.name) && (
-                  <div className="mt-2 ml-12 p-4 bg-white border border-slate-200 rounded-lg">
-                    <div className="text-sm font-semibold text-slate-700 mb-2">Variants (SKUs):</div>
-                    <div className="space-y-1">
-                      {product.variants.map((v, idx) => (
-                        <div key={idx} className="flex justify-between text-sm">
-                          <span className="text-slate-600">
-                            {v.sku} ({v.fulfillment})
-                          </span>
-                          <span className="text-slate-800 font-medium">
-                            {formatMoney(v.sales)} ({v.quantity} qty, {v.orders} orders)
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              );
-            })}
-          </div>
-          )}
-        </div>
-
-        {/* Top 20 Parents - Collapsible */}
-        <div className="bg-white rounded-xl shadow-sm mb-6">
-          <button
-            onClick={() => setShowTop20Parents(!showTop20Parents)}
-            className="w-full p-6 flex items-center justify-between hover:bg-slate-50 transition-colors rounded-xl"
-          >
-            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-              <Package className="w-5 h-5 text-purple-600" />
-              Top 20 Parents
-            </h2>
-            {showTop20Parents ? (
-              <ChevronUp className="w-5 h-5 text-slate-400" />
-            ) : (
-              <ChevronDown className="w-5 h-5 text-slate-400" />
-            )}
-          </button>
-
-          {showTop20Parents && (
-          <div className="px-6 pb-6 space-y-2">
-            {top20Parents.map((parent, idx) => {
-              const prevParent = comparisonParentMap.get(parent.parent);
-
-              return (
-              <div key={parent.parent}>
-                <div
-                  className="flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 cursor-pointer transition"
-                  onClick={() => toggleParent(parent.parent)}
-                >
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className="text-sm font-bold text-slate-400 w-8">#{idx + 1}</div>
-                    <div className="text-left">
-                      <div className="font-medium text-slate-800">{parent.parent}</div>
-                      <div className="text-xs text-slate-500">
-                        {parent.category} · {parent.totalProducts} products
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right mr-4 flex items-center gap-2">
-                    <div>
-                      <div className="font-bold text-slate-800">{formatMoney(parent.totalSales)}</div>
-                      <div className="text-xs text-slate-500">
-                        {parent.totalOrders} orders
-                      </div>
-                    </div>
-                    {comparisonMode !== 'none' && prevParent && (
-                      <ComparisonBadge current={parent.totalSales} previous={prevParent.totalSales} />
-                    )}
-                  </div>
-                  {expandedParents.has(parent.parent) ? (
-                    <ChevronUp className="w-5 h-5 text-slate-400" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-slate-400" />
-                  )}
-                </div>
-
-                {/* Expanded: Products under this parent */}
-                {expandedParents.has(parent.parent) && (
-                  <div className="mt-2 ml-12 p-4 bg-white border border-slate-200 rounded-lg">
-                    <div className="text-sm font-semibold text-slate-700 mb-2">Products:</div>
-                    <div className="space-y-1">
-                      {parent.variants.map((v, idx) => (
-                        <div key={idx} className="flex justify-between text-sm">
-                          <span className="text-slate-600">
-                            {v.name} (ASIN: {v.asin})
-                          </span>
-                          <span className="text-slate-800 font-medium">
-                            {formatMoney(v.sales)} ({v.orders} orders)
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              );
-            })}
-          </div>
-          )}
-        </div>
-
         {/* Details Table */}
         <DetailsTable
           detailsProducts={detailsProducts}
@@ -840,6 +645,8 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
           comparisonDateRange={comparisonDateRange}
           globalCosts={globalCosts}
           salesByFulfillment={salesByFulfillment}
+          filterMarketplace={selectedMarketplace}
+          filterFulfillment={selectedFulfillment}
           onViewModeChange={setDetailsViewMode}
           onCategoryChange={(value) => {
             setSelectedCategory(value);

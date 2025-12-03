@@ -7,6 +7,13 @@ export interface CategoryAnalytics {
   totalSales: number;
   totalOrders: number;
   totalProducts: number;
+  // Absolute values for weighted average calculations
+  fbaSales: number;
+  fbmSales: number;
+  sellingFees: number;
+  fbaFees: number;
+  totalRefundLoss: number;
+  // Percentages
   fbaFeePercentage: number;
   sellingFeePercentage: number;
   refundLossPercentage: number;

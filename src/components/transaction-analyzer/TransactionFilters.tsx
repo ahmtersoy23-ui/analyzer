@@ -1,10 +1,11 @@
 /**
  * TransactionFilters - Filter controls for Transaction Analyzer
+ * Updated to match ProductFilters layout (Faz 2)
  */
 
 import React from 'react';
 import { Filter } from 'lucide-react';
-import type { MarketplaceCode, MarketplaceConfig } from '../../types/transaction';
+import type { MarketplaceCode } from '../../types/transaction';
 import { MARKETPLACE_CONFIGS } from '../../constants/marketplaces';
 
 interface TransactionFiltersProps {
@@ -13,7 +14,7 @@ interface TransactionFiltersProps {
   selectedFulfillment: string;
   comparisonMode: 'none' | 'previous-period' | 'previous-year';
   storedFiles: Array<{ marketplace: string }>;
-  comparisonLabel?: string;
+  comparisonDateRange?: { start: Date; end: Date } | null;
   onMarketplaceChange: (value: MarketplaceCode | null) => void;
   onDateRangeChange: (range: { start: string; end: string }) => void;
   onFulfillmentChange: (value: string) => void;
@@ -26,7 +27,7 @@ export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
   selectedFulfillment,
   comparisonMode,
   storedFiles,
-  comparisonLabel,
+  comparisonDateRange,
   onMarketplaceChange,
   onDateRangeChange,
   onFulfillmentChange,
@@ -35,35 +36,14 @@ export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
   const marketplaceCodes = storedFiles.map(f => f.marketplace as MarketplaceCode);
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6 mb-6 no-print">
-      <div className="flex items-center gap-2 mb-4">
-        <Filter className="w-5 h-5 text-slate-600" />
-        <h2 className="text-lg font-semibold text-slate-800">Filters</h2>
+    <div className="bg-white rounded-xl shadow-sm p-4 mb-6 sticky top-[68px] z-40 no-print">
+      <div className="flex items-center gap-2 mb-3">
+        <Filter className="w-4 h-4 text-slate-600" />
+        <h2 className="text-base font-semibold text-slate-800">Filters</h2>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Marketplace Filter - Show only if multiple marketplaces */}
-        {marketplaceCodes.length > 1 && (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Marketplace
-            </label>
-            <select
-              value={marketplaceCode || ''}
-              onChange={(e) => onMarketplaceChange(e.target.value as MarketplaceCode || null)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">All</option>
-              {marketplaceCodes.map(code => (
-                <option key={code} value={code}>
-                  {MARKETPLACE_CONFIGS[code].currencySymbol} {MARKETPLACE_CONFIGS[code].name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Date Range */}
+        {/* Date Range - First (like ProductFilters) */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
             Start Date
@@ -86,6 +66,25 @@ export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
             onChange={(e) => onDateRangeChange({ ...dateRange, end: e.target.value })}
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
           />
+        </div>
+
+        {/* Marketplace - Always visible (like ProductFilters) */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Marketplace
+          </label>
+          <select
+            value={marketplaceCode || 'all'}
+            onChange={(e) => onMarketplaceChange(e.target.value === 'all' ? null : e.target.value as MarketplaceCode)}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          >
+            <option value="all">All Marketplaces</option>
+            {marketplaceCodes.map(code => (
+              <option key={code} value={code}>
+                {MARKETPLACE_CONFIGS[code].currencySymbol} {MARKETPLACE_CONFIGS[code].name}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Fulfillment */}
@@ -122,11 +121,21 @@ export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
         </div>
       </div>
 
-      {/* Comparison Info */}
-      {comparisonMode !== 'none' && comparisonLabel && (
+      {/* Comparison Info - Same format as ProductFilters */}
+      {comparisonMode !== 'none' && comparisonDateRange && (
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="text-sm text-blue-800">
-            <span className="font-semibold">Comparing:</span> {comparisonLabel}
+            <span className="font-semibold">Comparing:</span>
+            {' '}
+            {new Date(dateRange.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            {' - '}
+            {new Date(dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            {' '}
+            <span className="text-blue-600">vs</span>
+            {' '}
+            {comparisonDateRange.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            {' - '}
+            {comparisonDateRange.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
           </div>
         </div>
       )}

@@ -1,0 +1,330 @@
+/**
+ * Type definitions for Profitability Analysis
+ * Extracted from profitabilityAnalytics.ts for better organization
+ */
+
+// ============================================
+// PRODUCT PROFIT ANALYSIS (NAME based)
+// ============================================
+export interface ProductProfitAnalysis {
+  // Product info (NAME based)
+  name: string;
+  asin: string;
+  parent: string;
+  category: string;
+  skus: string[];
+  fulfillment: 'FBA' | 'FBM' | 'Mixed';
+
+  // Sales metrics
+  totalRevenue: number;
+  totalOrders: number;
+  totalQuantity: number;
+  refundedQuantity: number;
+  avgSalePrice: number;
+
+  // Fulfillment breakdown
+  fbaRevenue: number;
+  fbmRevenue: number;
+  fbaQuantity: number;
+  fbmQuantity: number;
+
+  // Amazon Fees (actual from transactions)
+  sellingFees: number;
+  fbaFees: number;
+  refundLoss: number;
+  vat: number;
+  totalAmazonFees: number;
+
+  // Calculated costs (from config)
+  productCost: number;
+  totalProductCost: number;
+  shippingCost: number;
+  customsDuty: number;
+  ddpFee: number;
+  warehouseCost: number;
+  othersCost: number;
+  gstCost: number;
+
+  // Global costs (applied from percentages)
+  advertisingCost: number;
+  fbaCost: number;
+  fbmCost: number;
+
+  // Profitability
+  grossProfit: number;
+  netProfit: number;
+  profitMargin: number;
+  roi: number;
+
+  // Percentages
+  sellingFeePercent: number;
+  fbaFeePercent: number;
+  refundLossPercent: number;
+  vatPercent: number;
+  productCostPercent: number;
+  shippingCostPercent: number;
+  advertisingPercent: number;
+  fbaCostPercent: number;
+  fbmCostPercent: number;
+  othersCostPercent: number;
+  gstCostPercent: number;
+
+  // Flags
+  hasCostData: boolean;
+  hasSizeData: boolean;
+  desi: number | null;
+}
+
+// ============================================
+// CATEGORY PROFIT ANALYSIS
+// ============================================
+export interface CategoryProfitAnalysis {
+  category: string;
+  parents: string[];  // Parents in this category
+  fulfillment: 'FBA' | 'FBM' | 'Mixed';
+
+  // Aggregated metrics
+  totalParents: number;   // Parent count
+  totalProducts: number;  // NAME count
+  totalRevenue: number;
+  totalOrders: number;
+  totalQuantity: number;
+  refundedQuantity: number;
+  avgSalePrice: number;
+
+  // Fulfillment breakdown
+  fbaRevenue: number;
+  fbmRevenue: number;
+  fbaQuantity: number;
+  fbmQuantity: number;
+
+  // Amazon Fees
+  sellingFees: number;
+  fbaFees: number;
+  refundLoss: number;
+  vat: number;
+  totalAmazonFees: number;
+
+  // Costs
+  productCost: number;       // Avg unit cost
+  totalProductCost: number;
+  shippingCost: number;
+  customsDuty: number;
+  ddpFee: number;
+  warehouseCost: number;
+  othersCost: number;
+  gstCost: number;
+
+  // Global costs
+  advertisingCost: number;
+  fbaCost: number;
+  fbmCost: number;
+
+  // Profitability
+  grossProfit: number;
+  netProfit: number;
+  profitMargin: number;
+  roi: number;
+
+  // Percentages
+  sellingFeePercent: number;
+  fbaFeePercent: number;
+  refundLossPercent: number;
+  vatPercent: number;
+  productCostPercent: number;
+  shippingCostPercent: number;
+  advertisingPercent: number;
+  fbaCostPercent: number;
+  fbmCostPercent: number;
+  othersCostPercent: number;
+  gstCostPercent: number;
+
+  // Flags
+  hasCostData: boolean;
+  hasSizeData: boolean;
+
+  // Top products
+  topProducts: Array<{
+    name: string;
+    revenue: number;
+    netProfit: number;
+    profitMargin: number;
+  }>;
+}
+
+// ============================================
+// PARENT PROFIT ANALYSIS
+// ============================================
+export interface ParentProfitAnalysis {
+  parent: string;
+  category: string;
+  names: string[];  // NAMEs under this parent
+  fulfillment: 'FBA' | 'FBM' | 'Mixed';
+
+  // Aggregated metrics
+  totalProducts: number;  // NAME count
+  totalRevenue: number;
+  totalOrders: number;
+  totalQuantity: number;
+  refundedQuantity: number;
+  avgSalePrice: number;
+
+  // Fulfillment breakdown
+  fbaRevenue: number;
+  fbmRevenue: number;
+  fbaQuantity: number;
+  fbmQuantity: number;
+
+  // Amazon Fees
+  sellingFees: number;
+  fbaFees: number;
+  refundLoss: number;
+  vat: number;
+  totalAmazonFees: number;
+
+  // Costs
+  productCost: number;
+  totalProductCost: number;
+  shippingCost: number;
+  customsDuty: number;
+  ddpFee: number;
+  warehouseCost: number;
+  othersCost: number;
+  gstCost: number;
+
+  // Global costs
+  advertisingCost: number;
+  fbaCost: number;
+  fbmCost: number;
+
+  // Profitability
+  grossProfit: number;
+  netProfit: number;
+  profitMargin: number;
+  roi: number;
+
+  // Percentages
+  sellingFeePercent: number;
+  fbaFeePercent: number;
+  refundLossPercent: number;
+  vatPercent: number;
+  productCostPercent: number;
+  shippingCostPercent: number;
+  advertisingPercent: number;
+  fbaCostPercent: number;
+  fbmCostPercent: number;
+  othersCostPercent: number;
+  gstCostPercent: number;
+
+  // Flags
+  hasCostData: boolean;
+  hasSizeData: boolean;
+}
+
+// ============================================
+// SKU PROFIT ANALYSIS (most granular level)
+// ============================================
+export interface SKUProfitAnalysis {
+  sku: string;
+  name: string;
+  parent: string;
+  category: string;
+  marketplace?: string;  // Marketplace code (US, UK, DE, etc.) - for All Marketplaces breakdown
+  fulfillment: 'FBA' | 'FBM' | 'Mixed';
+
+  // Sales metrics
+  totalRevenue: number;
+  totalOrders: number;
+  totalQuantity: number;
+  refundedQuantity: number;
+  avgSalePrice: number;
+
+  // Amazon Fees (actual from transactions)
+  sellingFees: number;
+  fbaFees: number;
+  refundLoss: number;
+  vat: number;                // VAT from transactions (EU marketplaces)
+  totalAmazonFees: number;
+
+  // Calculated costs (from config)
+  productCost: number;
+  totalProductCost: number;
+  shippingCost: number;
+  customsDuty: number;
+  ddpFee: number;
+  warehouseCost: number;
+  othersCost: number;
+  gstCost: number;
+
+  // Global costs (applied from percentages)
+  advertisingCost: number;
+  fbaCost: number;
+  fbmCost: number;
+
+  // Profitability
+  grossProfit: number;
+  netProfit: number;
+  profitMargin: number;
+  roi: number;
+
+  // Percentages
+  sellingFeePercent: number;
+  fbaFeePercent: number;
+  refundLossPercent: number;
+  vatPercent: number;
+  productCostPercent: number;
+  shippingCostPercent: number;
+  advertisingPercent: number;
+  fbaCostPercent: number;
+  fbmCostPercent: number;
+  othersCostPercent: number;
+  gstCostPercent: number;
+
+  // Flags
+  hasCostData: boolean;
+  hasSizeData: boolean;
+  desi: number | null;
+}
+
+// ============================================
+// SUMMARY STATS
+// ============================================
+export interface ProfitabilitySummaryStats {
+  // Revenue
+  totalRevenue: number;
+  totalOrders: number;
+  totalQuantity: number;
+
+  // Amazon Fees
+  totalSellingFees: number;
+  totalFbaFees: number;
+  totalRefundLoss: number;
+  totalAmazonFees: number;
+
+  // Costs
+  totalProductCost: number;
+  totalShippingCost: number;
+  totalCustomsDuty: number;
+  totalCosts: number;
+
+  // Profit
+  grossProfit: number;
+  netProfit: number;
+  profitMargin: number;
+
+  // Products
+  totalProducts: number;
+  profitableProducts: number;
+  unprofitableProducts: number;
+  unknownProducts: number; // No cost data
+}
+
+// ============================================
+// GLOBAL COST PERCENTAGES
+// ============================================
+export interface GlobalCostPercentages {
+  advertisingPercent: number;  // Ads % = Advertising cost / Total sales
+  fbaCostPercent: number;      // FBA Cost % = FBA expenses / FBA sales
+  fbmCostPercent: number;      // FBM Cost % = FBM expenses / FBM sales
+  refundRecoveryRate: number;  // Refund recovery rate (0-1), e.g., 0.30 = 30% recovered
+}

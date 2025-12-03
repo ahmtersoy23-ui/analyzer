@@ -68,11 +68,15 @@ export interface FBMConfig {
   fromLocal?: FBMFromLocalConfig;  // Sadece US için gerekli
 }
 
-// GST/VAT config for non-Amazon tax obligations (AU, etc.)
+// GST/VAT uygulanacak fulfillment türü
+export type GSTApplyTo = 'FBA' | 'FBM' | 'BOTH';
+
+// GST/VAT config for non-Amazon tax obligations
 export interface GSTConfig {
   enabled: boolean;           // GST hesaplaması aktif mi
-  ratePercent: number;        // GST oranı % (AU: 10%)
+  ratePercent: number;        // GST oranı % (AU: 10%, AE: 5%, SA: 15%)
   includedInPrice: boolean;   // Fiyatın içinde mi (AU: true)
+  applyTo: GSTApplyTo;        // Hangi fulfillment türüne uygulanacak (AU: FBA, AE/SA: BOTH)
 }
 
 export interface CountryProfitConfig {

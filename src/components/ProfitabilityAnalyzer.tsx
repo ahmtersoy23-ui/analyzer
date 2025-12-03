@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
-import { ChevronDown, ChevronUp, DollarSign, Truck, Settings, BarChart3 } from 'lucide-react';
+import { ChevronDown, ChevronUp, DollarSign, Truck, Settings, BarChart3, AlertTriangle, RefreshCw } from 'lucide-react';
 import { TransactionData, MarketplaceCode } from '../types/transaction';
 import {
   ProductCostData,
@@ -41,13 +41,14 @@ import {
 } from '../services/analytics/productAnalytics';
 import { createMoneyFormatter, formatPercent } from '../utils/formatters';
 import { MARKETPLACE_CONFIGS } from '../constants/marketplaces';
+import { convertCurrency, getMarketplaceCurrency, fetchLiveRates, getExchangeRateStatus, type ExchangeRateStatus } from '../utils/currencyExchange';
 
 // Sub-components - StatusBadge is small, keep it sync
 import StatusBadge from './profitability-analyzer/StatusBadge';
 import { ProfitabilityDetailsTable } from './profitability-analyzer/ProfitabilityDetailsTable';
 import { CategoryCardsSection } from './profitability-analyzer/CategoryCardsSection';
-import { CoverageStatsSection } from './profitability-analyzer/CoverageStatsSection';
 import { FiltersSection } from './profitability-analyzer/FiltersSection';
+import { CoverageStatsSection } from './profitability-analyzer/CoverageStatsSection';
 
 // Types needed for lazy components
 import type { NameOverride, FBMNameInfo } from './profitability-analyzer/CostUploadTab';
@@ -61,6 +62,7 @@ const CostUploadTab = lazy(() => import('./profitability-analyzer/CostUploadTab'
 const ShippingRatesTab = lazy(() => import('./profitability-analyzer/ShippingRatesTab'));
 const CountrySettingsTab = lazy(() => import('./profitability-analyzer/CountrySettingsTab'));
 const PieChartModal = lazy(() => import('./profitability-analyzer/PieChartModal'));
+const ProductCountryAnalysis = lazy(() => import('./profitability-analyzer/ProductCountryAnalysis'));
 
 // Tab loading fallback
 const TabLoadingFallback = () => (
@@ -71,6 +73,7 @@ const TabLoadingFallback = () => (
 
 // Storage key for NAME overrides
 const NAME_OVERRIDES_STORAGE_KEY = 'amazon-analyzer-name-overrides';
+const TOTAL_CATALOG_PRODUCTS_KEY = 'amazon-analyzer-total-catalog-products';
 
 // Empty result constants for stable references (prevents unnecessary re-renders)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,6 +102,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     startDate,
     endDate,
     filterMarketplace,
+    selectedMarketplaces,
     filterFulfillment,
     filterCategory,
     filterParent,
@@ -109,6 +113,8 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     setStartDate,
     setEndDate,
     setFilterMarketplace,
+    setSelectedMarketplaces,
+    toggleMarketplace,
     setFilterFulfillment,
     setFilterCategory,
     setExcludeGradeResell,
@@ -122,6 +128,9 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   const [showCountrySettings, setShowCountrySettings] = useState(false);
   const [showExcludedProducts, setShowExcludedProducts] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  // Exchange rate status for warning display
+  const [exchangeRateStatus, setExchangeRateStatus] = useState<ExchangeRateStatus | null>(null);
 
   // ============================================
   // CONFIG DATA STATES
@@ -147,6 +156,21 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     localStorage.setItem(NAME_OVERRIDES_STORAGE_KEY, JSON.stringify(nameOverrides));
   }, [nameOverrides]);
 
+  // Total catalog products - manually entered
+  const [totalCatalogProducts, setTotalCatalogProducts] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(TOTAL_CATALOG_PRODUCTS_KEY);
+      return saved ? parseInt(saved, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  // Save total catalog products to localStorage
+  useEffect(() => {
+    localStorage.setItem(TOTAL_CATALOG_PRODUCTS_KEY, totalCatalogProducts.toString());
+  }, [totalCatalogProducts]);
+
   // Pie Chart Modal State (type imported from PieChartModal)
   const [selectedItem, setSelectedItem] = useState<SelectedItemType>(null);
 
@@ -159,6 +183,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
 
     const savedConfigs = loadCountryConfigs();
     setCountryConfigs(savedConfigs);
+
+    // Fetch live exchange rates from Frankfurter API
+    fetchLiveRates().then(({ status }) => {
+      setExchangeRateStatus(status);
+    });
   }, []);
 
   // Auto-extract cost data from enriched transactions (from Google Sheets)
@@ -215,8 +244,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       };
     });
 
-    // Step 4: Apply NAME-level overrides (US only)
-    if (filterMarketplace === 'US' && nameOverrides.length > 0) {
+    // Step 4: Apply NAME-level overrides
+    // These are US-specific (customShipping, fbmSource) but should be applied
+    // even in All Marketplaces mode so calculateSKUProfitability can use them
+    // for US entries. The function handles marketplace-specific logic internally.
+    if (nameOverrides.length > 0) {
       const overrideByName = new Map<string, NameOverride>();
       nameOverrides.forEach(o => overrideByName.set(o.name, o));
 
@@ -233,7 +265,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     }
 
     return result;
-  }, [costData, nameOverrides, filterMarketplace]);
+  }, [costData, nameOverrides]);
 
   // ============================================
   // AVAILABLE CATEGORIES (from transactions)
@@ -252,8 +284,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   // ============================================
   // FILTERED TRANSACTIONS
   // ============================================
+  // NOTE: Fulfillment filtering is NOT applied here - it's applied at display level
+  // This ensures SKU's true fulfillment type is calculated from ALL its transactions
+  // (not just filtered ones), preventing Mixed SKUs from appearing as FBA/FBM-only
   const filteredTransactions = useMemo(() => {
-    return transactionData.filter(t => {
+    const filtered = transactionData.filter(t => {
       if (!t.sku) return false;
 
       // Date filtering
@@ -263,15 +298,23 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
         if (endDate && transactionDate > new Date(endDate)) return false;
       }
 
-      // Marketplace filtering
-      if (filterMarketplace !== 'all' && t.marketplaceCode !== filterMarketplace) return false;
+      // Marketplace filtering - support multi-select
+      if (selectedMarketplaces.size > 0) {
+        // Multi-select mode: filter by selected marketplaces
+        if (!t.marketplaceCode || !selectedMarketplaces.has(t.marketplaceCode)) return false;
+      } else if (filterMarketplace !== 'all' && t.marketplaceCode !== filterMarketplace) {
+        // Single select mode
+        return false;
+      }
 
-      // Fulfillment filtering
-      if (filterFulfillment !== 'all' && t.fulfillment !== filterFulfillment) return false;
+      // NOTE: Fulfillment filtering removed from here - applied at displaySkus level
+      // This ensures SKU fulfillment type is calculated from all transactions
 
       return true;
     });
-  }, [transactionData, startDate, endDate, filterMarketplace, filterFulfillment]);
+
+    return filtered;
+  }, [transactionData, startDate, endDate, filterMarketplace, selectedMarketplaces]);
 
   // ============================================
   // PROFITABILITY CALCULATIONS
@@ -289,12 +332,16 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
         if (endDate && transactionDate > new Date(endDate)) return false;
       }
 
-      // Marketplace filtering only
-      if (filterMarketplace !== 'all' && t.marketplaceCode !== filterMarketplace) return false;
+      // Marketplace filtering - support multi-select
+      if (selectedMarketplaces.size > 0) {
+        if (!t.marketplaceCode || !selectedMarketplaces.has(t.marketplaceCode)) return false;
+      } else if (filterMarketplace !== 'all' && t.marketplaceCode !== filterMarketplace) {
+        return false;
+      }
 
       return true;
     });
-  }, [transactionData, startDate, endDate, filterMarketplace]);
+  }, [transactionData, startDate, endDate, filterMarketplace, selectedMarketplaces]);
 
   // Additional costs from Phase 1 calculations (filtered by date/marketplace)
   // Calculate percentages to apply to SKU level
@@ -342,19 +389,132 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     return skuUpper.startsWith('AMZN.GR') || skuUpper.startsWith('AMZN,GR');
   };
 
+  // Helper: Calculate costPercentages for a specific marketplace
+  const calculateMarketplaceCostPercentages = useCallback((mpCode: MarketplaceCode | null) => {
+    // Filter transactions for this marketplace
+    const mpTransactions = mpCode
+      ? costTransactions.filter(t => t.marketplaceCode === mpCode)
+      : costTransactions;
+
+    const advertisingCost = calculateAdvertisingCost(mpTransactions, mpCode);
+    const fbaCost = calculateFBACosts(mpTransactions, mpCode);
+    const fbmCost = calculateFBMCosts(mpTransactions, mpCode);
+
+    const orders = mpTransactions.filter(t => t.categoryType === 'Order');
+    const totalRevenue = orders.reduce((sum, t) => sum + (t.productSales || 0), 0);
+
+    const fbaRevenue = orders
+      .filter(t => t.fulfillment === 'FBA' || t.fulfillment === 'AFN')
+      .reduce((sum, t) => sum + (t.productSales || 0), 0);
+
+    const fbmRevenue = orders
+      .filter(t => t.fulfillment !== 'FBA' && t.fulfillment !== 'AFN')
+      .reduce((sum, t) => sum + (t.productSales || 0), 0);
+
+    const mpConfig = mpCode ? MARKETPLACE_CONFIGS[mpCode] : null;
+    const refundRecoveryRate = mpConfig?.refundRecoveryRate ?? 0.30;
+
+    return {
+      advertisingPercent: totalRevenue > 0 ? (advertisingCost / totalRevenue) * 100 : 0,
+      fbaCostPercent: fbaRevenue > 0 ? (fbaCost / fbaRevenue) * 100 : 0,
+      fbmCostPercent: fbmRevenue > 0 ? (fbmCost / fbmRevenue) * 100 : 0,
+      refundRecoveryRate,
+    };
+  }, [costTransactions]);
+
   // SKU-level profitability (most granular - shows FBA/FBM clearly)
   // Uses costPercentages to apply global costs (Ads, FBA Cost, FBM Cost)
+  // For "All Marketplaces" or multi-select: Calculate separately per marketplace with marketplace-specific costPercentages
+  // This ensures shipping/customs/GST and global costs are calculated correctly per marketplace
   const { skuProfitability, excludedSkus, gradeResellSkus } = useMemo(() => {
     if (filteredTransactions.length === 0) return EMPTY_SKU_RESULT;
-    const mpCode = filterMarketplace === 'all' ? null : filterMarketplace as MarketplaceCode;
-    const allSkus = calculateSKUProfitability(
-      filteredTransactions,
-      mergedCostData, // Use merged data with overrides
-      shippingRates,
-      countryConfigs,
-      mpCode,
-      costPercentages // Pass global cost percentages
-    );
+
+    let allSkus;
+
+    // Multi-marketplace mode: either "all" selected OR multiple marketplaces in multi-select
+    const isMultiMarketplace = filterMarketplace === 'all' || selectedMarketplaces.size > 1;
+
+    if (isMultiMarketplace) {
+      // All Marketplaces or Multi-select: Calculate per marketplace with marketplace-specific costPercentages
+      // This ensures Ads%, FBA Cost%, FBM Cost% are calculated correctly for each marketplace
+
+      // Get unique marketplaces from transactions
+      const marketplaces = Array.from(new Set(
+        filteredTransactions
+          .map(t => t.marketplaceCode)
+          .filter((mp): mp is MarketplaceCode => mp !== undefined && mp !== null)
+      ));
+
+      // Calculate SKUs for each marketplace with its own costPercentages
+      const allMarketplaceSkus: ReturnType<typeof calculateSKUProfitability> = [];
+
+      marketplaces.forEach(mpCode => {
+        const mpTransactions = filteredTransactions.filter(t => t.marketplaceCode === mpCode);
+        if (mpTransactions.length === 0) return;
+
+        // Calculate marketplace-specific costPercentages
+        const mpCostPercentages = calculateMarketplaceCostPercentages(mpCode);
+
+        // Calculate SKUs for this marketplace
+        const mpSkus = calculateSKUProfitability(
+          mpTransactions,
+          mergedCostData,
+          shippingRates,
+          countryConfigs,
+          mpCode,
+          mpCostPercentages
+        );
+
+        // Add marketplace info and convert to USD for All Marketplaces aggregation
+        const sourceCurrency = getMarketplaceCurrency(mpCode);
+
+        mpSkus.forEach(sku => {
+          // Add marketplace info
+          (sku as any).marketplace = mpCode;
+
+          // Convert all monetary values to USD for proper aggregation
+          if (sourceCurrency !== 'USD') {
+            const convert = (val: number) => convertCurrency(val, sourceCurrency, 'USD');
+
+            sku.totalRevenue = convert(sku.totalRevenue);
+            sku.avgSalePrice = convert(sku.avgSalePrice);
+            sku.sellingFees = convert(sku.sellingFees);
+            sku.fbaFees = convert(sku.fbaFees);
+            sku.refundLoss = convert(sku.refundLoss);
+            sku.vat = convert(sku.vat);
+            sku.totalAmazonFees = convert(sku.totalAmazonFees);
+            sku.productCost = convert(sku.productCost);
+            sku.totalProductCost = convert(sku.totalProductCost);
+            sku.shippingCost = convert(sku.shippingCost);
+            sku.customsDuty = convert(sku.customsDuty);
+            sku.ddpFee = convert(sku.ddpFee);
+            sku.warehouseCost = convert(sku.warehouseCost);
+            sku.othersCost = convert(sku.othersCost);
+            sku.gstCost = convert(sku.gstCost);
+            sku.advertisingCost = convert(sku.advertisingCost);
+            sku.fbaCost = convert(sku.fbaCost);
+            sku.fbmCost = convert(sku.fbmCost);
+            sku.grossProfit = convert(sku.grossProfit);
+            sku.netProfit = convert(sku.netProfit);
+            // Note: Percentages (profitMargin, roi, etc.) don't need conversion
+          }
+        });
+
+        allMarketplaceSkus.push(...mpSkus);
+      });
+
+      allSkus = allMarketplaceSkus;
+    } else {
+      // Single marketplace: Calculate normally
+      allSkus = calculateSKUProfitability(
+        filteredTransactions,
+        mergedCostData,
+        shippingRates,
+        countryConfigs,
+        filterMarketplace as MarketplaceCode,
+        costPercentages
+      );
+    }
 
     // Separate Grade & Resell SKUs
     const grSkus = allSkus.filter(s => isGradeResellSku(s.sku));
@@ -366,7 +526,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       .filter(s => !s.hasCostData || !s.hasSizeData)
       .sort((a, b) => b.totalRevenue - a.totalRevenue); // Sort by revenue desc
     return { skuProfitability: included, excludedSkus: excluded, gradeResellSkus: grSkus };
-  }, [filteredTransactions, mergedCostData, shippingRates, countryConfigs, filterMarketplace, costPercentages, excludeGradeResell]);
+  }, [filteredTransactions, mergedCostData, shippingRates, countryConfigs, filterMarketplace, selectedMarketplaces, costPercentages, excludeGradeResell, calculateMarketplaceCostPercentages]);
 
   // NAME-level profitability - calculated products from SKUs with cost data only
   // This ensures revenue matches between coverage stats and category cards
@@ -408,11 +568,16 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       filtered = filtered.filter(p => p.parent === filterParent);
     }
 
+    // Fulfillment filter - show only exact matches
+    if (filterFulfillment !== 'all') {
+      filtered = filtered.filter(p => p.fulfillment === filterFulfillment);
+    }
+
     // Sort by revenue descending
     filtered.sort((a, b) => b.totalRevenue - a.totalRevenue);
 
     return filtered;
-  }, [parentProfitability, filterCategory, filterParent]);
+  }, [parentProfitability, filterCategory, filterParent, filterFulfillment]);
 
   const displayCategories = useMemo(() => {
     let filtered = [...categoryProfitability];
@@ -422,11 +587,16 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       filtered = filtered.filter(c => c.category === filterCategory);
     }
 
+    // Fulfillment filter - show only exact matches
+    if (filterFulfillment !== 'all') {
+      filtered = filtered.filter(c => c.fulfillment === filterFulfillment);
+    }
+
     // Sort by revenue descending
     filtered.sort((a, b) => b.totalRevenue - a.totalRevenue);
 
     return filtered;
-  }, [categoryProfitability, filterCategory]);
+  }, [categoryProfitability, filterCategory, filterFulfillment]);
 
   // FBM Name Info - FBM/Mixed satışları olan NAME'leri çıkar (Override editörü için)
   // SADECE US pazarı için geçerli - diğer pazarlarda FBM zaten TR'den gönderilir
@@ -487,20 +657,20 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
 
   // Coverage stats - now uses SKU-level data for accuracy
   const coverageStats = useMemo(() => {
-    const totalSkus = skuProfitability.length + excludedSkus.length;
+    // Grade & Resell stats (calculate first for totalRevenue)
+    const gradeResellCount = gradeResellSkus.length;
+    const gradeResellRevenue = gradeResellSkus.reduce((sum, s) => sum + s.totalRevenue, 0);
+
+    const totalSkus = skuProfitability.length + excludedSkus.length + gradeResellCount;
     const calculatedSkus = skuProfitability.length;
     const excludedCount = excludedSkus.length;
     const coveragePercent = totalSkus > 0 ? (calculatedSkus / totalSkus) * 100 : 0;
 
-    // Revenue coverage
-    const totalRevenue = [...skuProfitability, ...excludedSkus].reduce((sum, s) => sum + s.totalRevenue, 0);
+    // Revenue coverage - include gradeResellRevenue in total for consistency with other views
+    const totalRevenue = [...skuProfitability, ...excludedSkus].reduce((sum, s) => sum + s.totalRevenue, 0) + gradeResellRevenue;
     const calculatedRevenue = skuProfitability.reduce((sum, s) => sum + s.totalRevenue, 0);
     const excludedRevenue = excludedSkus.reduce((sum, s) => sum + s.totalRevenue, 0);
     const revenueCoveragePercent = totalRevenue > 0 ? (calculatedRevenue / totalRevenue) * 100 : 0;
-
-    // Grade & Resell stats
-    const gradeResellCount = gradeResellSkus.length;
-    const gradeResellRevenue = gradeResellSkus.reduce((sum, s) => sum + s.totalRevenue, 0);
 
     return {
       totalSkus,
@@ -535,6 +705,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     // Name filter
     if (filterName !== 'all') {
       filtered = filtered.filter(p => p.name === filterName);
+    }
+
+    // Fulfillment filter - show only exact matches
+    if (filterFulfillment !== 'all') {
+      filtered = filtered.filter(p => p.fulfillment === filterFulfillment);
     }
 
     // Sort
@@ -598,7 +773,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     });
 
     return filtered;
-  }, [profitabilityProducts, filterCategory, filterParent, filterName, sortColumn, sortDirection]);
+  }, [profitabilityProducts, filterCategory, filterParent, filterName, filterFulfillment, sortColumn, sortDirection]);
 
   // Filtered & Sorted SKUs
   const displaySkus = useMemo(() => {
@@ -617,6 +792,14 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     // Name filter
     if (filterName !== 'all') {
       filtered = filtered.filter(s => s.name === filterName);
+    }
+
+    // Fulfillment filter - show only exact matches, exclude Mixed from single-type filters
+    if (filterFulfillment !== 'all') {
+      filtered = filtered.filter(s => {
+        // Only show exact fulfillment matches - Mixed SKUs are excluded from FBA/FBM-only filters
+        return s.fulfillment === filterFulfillment;
+      });
     }
 
     // Sort
@@ -700,12 +883,14 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     });
 
     return filtered;
-  }, [skuProfitability, filterCategory, filterParent, filterName, sortColumn, sortDirection]);
+  }, [skuProfitability, filterCategory, filterParent, filterName, filterFulfillment, sortColumn, sortDirection]);
 
   // ============================================
   // HELPER: FORMAT MONEY (memoized)
   // ============================================
-  const formatMoney = useMemo(() => createMoneyFormatter(filterMarketplace), [filterMarketplace]);
+  // Use 'all' (USD) formatting when multiple marketplaces are selected
+  const effectiveMarketplace = selectedMarketplaces.size > 1 ? 'all' : filterMarketplace;
+  const formatMoney = useMemo(() => createMoneyFormatter(effectiveMarketplace), [effectiveMarketplace]);
 
   // Update cost summary when cost data or phase2 data changes
   useEffect(() => {
@@ -859,25 +1044,6 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
             </div>
           </div>
 
-          {/* Status indicators */}
-          <div className="flex flex-wrap gap-3 mt-4">
-            <StatusBadge
-              label="Cost Data"
-              value={`${completeData}/${totalNames}`}
-              isReady={completeData > 0}
-            />
-            <StatusBadge
-              label="Shipping"
-              value={shippingRates?.routes['US-TR'].rates.length || 0}
-              isReady={(shippingRates?.routes['US-TR'].rates.length || 0) > 0}
-            />
-            <StatusBadge
-              label="Config"
-              value={countryConfigs ? 'OK' : '-'}
-              isReady={!!countryConfigs}
-            />
-          </div>
-
           {/* Collapsible Sections - Lazy loaded */}
           {showCostData && (
             <div className="mt-4 border-t-2 border-dashed border-slate-300 pt-6">
@@ -889,6 +1055,8 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
                   nameOverrides={nameOverrides}
                   onOverridesChange={setNameOverrides}
                   fbmNameInfo={fbmNameInfo}
+                  totalCatalogProducts={totalCatalogProducts}
+                  onTotalCatalogProductsChange={setTotalCatalogProducts}
                 />
               </Suspense>
             </div>
@@ -919,37 +1087,75 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           )}
         </div>
 
+        {/* Exchange Rate Warning - shows when API fetch failed */}
+        {exchangeRateStatus?.error && (
+          <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-medium text-red-800 mb-1">Döviz Kuru Uyarısı</div>
+              <div className="text-sm text-red-700">{exchangeRateStatus.error}</div>
+              {exchangeRateStatus.source === 'fallback' && (
+                <div className="text-xs text-red-600 mt-1">
+                  Fallback kurlar kullanılıyor. All Marketplaces modunda USD dönüşümleri güncel olmayabilir.
+                </div>
+              )}
+            </div>
+            <button
+              onClick={async () => {
+                const { status } = await fetchLiveRates();
+                setExchangeRateStatus(status);
+              }}
+              className="flex items-center gap-1 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Tekrar Dene
+            </button>
+          </div>
+        )}
+
+        {/* Exchange Rate Success Info - subtle indicator when using live rates */}
+        {exchangeRateStatus?.source === 'api' && filterMarketplace === 'all' && (
+          <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2 mb-4 flex items-center gap-2 text-sm">
+            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            <span className="text-green-700">
+              Canlı döviz kurları aktif (ECB/Frankfurter) - Son güncelleme: {exchangeRateStatus.lastUpdate ? new Date(exchangeRateStatus.lastUpdate).toLocaleString('tr-TR') : '-'}
+            </span>
+          </div>
+        )}
+
         {/* Filters Section - Extracted Component */}
         <FiltersSection
           startDate={startDate}
           endDate={endDate}
           filterMarketplace={filterMarketplace}
+          selectedMarketplaces={selectedMarketplaces}
           filterFulfillment={filterFulfillment}
           marketplaces={marketplaces}
           setStartDate={setStartDate}
           setEndDate={setEndDate}
           setFilterMarketplace={setFilterMarketplace}
+          setSelectedMarketplaces={setSelectedMarketplaces}
+          toggleMarketplace={toggleMarketplace}
           setFilterFulfillment={setFilterFulfillment}
           setFilterCategory={setFilterCategory}
         />
 
-        {/* Coverage Stats - Extracted Component */}
-        {allProducts.length > 0 && (
-          <CoverageStatsSection
-            coverageStats={coverageStats}
-            excludedSkus={excludedSkus}
-            excludeGradeResell={excludeGradeResell}
-            setExcludeGradeResell={setExcludeGradeResell}
-            showExcludedProducts={showExcludedProducts}
-            setShowExcludedProducts={setShowExcludedProducts}
-            filterMarketplace={filterMarketplace}
-            formatMoney={formatMoney}
-          />
-        )}
+        {/* Coverage Stats - Data Coverage Section */}
+        <CoverageStatsSection
+          coverageStats={coverageStats}
+          excludedSkus={excludedSkus}
+          excludeGradeResell={excludeGradeResell}
+          setExcludeGradeResell={setExcludeGradeResell}
+          showExcludedProducts={showExcludedProducts}
+          setShowExcludedProducts={setShowExcludedProducts}
+          filterMarketplace={filterMarketplace}
+          formatMoney={formatMoney}
+        />
 
         {/* Category Cards - Extracted Component */}
         <CategoryCardsSection
           categoryProfitability={categoryProfitability}
+          skuProfitability={skuProfitability}
           expandedCategories={expandedCategories}
           setExpandedCategories={setExpandedCategories}
           filterCategory={filterCategory}
@@ -974,7 +1180,22 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
             productNames={productNames}
             formatMoney={formatMoney}
             onSelectItem={setSelectedItem}
+            totalCatalogProducts={totalCatalogProducts}
+            productsWithSales={allProducts.filter(p => p.totalQuantity > 0).length}
           />
+        )}
+
+        {/* Product Country Analysis - Only visible in All Marketplaces mode, after Details */}
+        {filterMarketplace === 'all' && skuProfitability.length > 0 && (
+          <Suspense fallback={<TabLoadingFallback />}>
+            <ProductCountryAnalysis
+              skuProfitability={skuProfitability}
+              formatMoney={formatMoney}
+              filterFulfillment={filterFulfillment}
+              startDate={startDate}
+              endDate={endDate}
+            />
+          </Suspense>
         )}
         {/* Empty State */}
         {allProducts.length === 0 && (
