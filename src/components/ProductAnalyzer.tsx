@@ -7,8 +7,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Package,
-  ChevronDown,
-  ChevronUp,
   TrendingUp,
   Tag
 } from 'lucide-react';
@@ -21,7 +19,6 @@ import {
   GlobalCosts
 } from '../services/analytics/productAnalytics';
 import { formatPercent, createMoneyFormatter } from '../utils/formatters';
-import { ComparisonBadge } from './shared/ComparisonBadge';
 import { ProductFilters } from './product-analyzer/ProductFilters';
 import { CategorySummary } from './product-analyzer/CategorySummary';
 import { DetailsTable } from './product-analyzer/DetailsTable';
@@ -289,7 +286,8 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
     [comparisonProducts, comparisonTransactions, comparisonDateRange]
   );
 
-  const parents = useMemo(() =>
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _parents = useMemo(() =>
     calculateParentAnalytics(products),
     [products]
   );

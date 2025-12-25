@@ -475,6 +475,7 @@ const ProductCountryAnalysis: React.FC<ProductCountryAnalysisProps> = ({
   }, [filteredAndSortedData, currentPage]);
 
   // Reset page when filters change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useMemo(() => {
     setCurrentPage(1);
   }, [showOnlyMultiCountry, filterCategory, filterParent, filterName]);

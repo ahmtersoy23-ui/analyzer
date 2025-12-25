@@ -5,8 +5,8 @@
 
 import React, { useMemo, useCallback } from 'react';
 import {
-  Table, BarChart3, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight,
-  X, Download, DollarSign, Package, Hash, Percent
+  Table, BarChart3, ArrowUpRight, ArrowDownRight,
+  X, DollarSign, Package, Hash, Percent
 } from 'lucide-react';
 import {
   BarChart,

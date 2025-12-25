@@ -42,10 +42,7 @@ import {
 } from '../services/analytics/productAnalytics';
 import { createMoneyFormatter, formatPercent } from '../utils/formatters';
 import { MARKETPLACE_CONFIGS } from '../constants/marketplaces';
-import { convertCurrency, getMarketplaceCurrency, fetchLiveRates, getExchangeRateStatus, type ExchangeRateStatus } from '../utils/currencyExchange';
-
-// Sub-components - StatusBadge is small, keep it sync
-import StatusBadge from './profitability-analyzer/StatusBadge';
+import { convertCurrency, getMarketplaceCurrency, fetchLiveRates, type ExchangeRateStatus } from '../utils/currencyExchange';
 import { ProfitabilityDetailsTable } from './profitability-analyzer/ProfitabilityDetailsTable';
 import { CategoryCardsSection } from './profitability-analyzer/CategoryCardsSection';
 import { FiltersSection } from './profitability-analyzer/FiltersSection';
@@ -1051,7 +1048,6 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   }, [mergedCostData]);
 
   const totalNames = costDataByName.size;
-  const completeData = Array.from(costDataByName.values()).filter(item => item.cost !== null && item.size !== null).length;
 
   // ============================================
   // RENDER
