@@ -335,7 +335,7 @@ export const QueryResultsPanel: React.FC<QueryResultsPanelProps> = ({
                     width={90}
                   />
                   <Tooltip
-                    formatter={(value: number) => formatValue(value, metric)}
+                    formatter={(value) => formatValue(value as number, metric)}
                     contentStyle={{
                       backgroundColor: 'rgba(255,255,255,0.95)',
                       border: '1px solid #e2e8f0',
