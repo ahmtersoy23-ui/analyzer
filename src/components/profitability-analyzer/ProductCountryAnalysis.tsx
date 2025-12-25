@@ -4,7 +4,7 @@
  * Only visible in "All Marketplaces" mode
  */
 
-import React, { useMemo, useState, useRef, useCallback } from 'react';
+import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import { Globe, TrendingDown, Trophy, ChevronLeft, ChevronRight as ChevronRightIcon, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { SKUProfitAnalysis } from '../../types/profitabilityAnalysis';
@@ -475,8 +475,7 @@ const ProductCountryAnalysis: React.FC<ProductCountryAnalysisProps> = ({
   }, [filteredAndSortedData, currentPage]);
 
   // Reset page when filters change
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useMemo(() => {
+  useEffect(() => {
     setCurrentPage(1);
   }, [showOnlyMultiCountry, filterCategory, filterParent, filterName]);
 
