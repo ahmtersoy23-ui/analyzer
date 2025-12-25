@@ -21,6 +21,13 @@ import {
 import type { TransactionData } from '../types/transaction';
 import { convertCurrency, getMarketplaceCurrency } from '../utils/currencyExchange';
 import { createMoneyFormatter } from '../utils/formatters';
+import {
+  QueryBuilder,
+  QueryResultsPanel,
+  executeQuery,
+  type QueryParams,
+  type QueryResults,
+} from './trends-analyzer';
 
 // ============================================
 // CONSTANTS
@@ -185,6 +192,10 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
   const [topN, setTopN] = useState<number>(10);
 
+  // Query Builder State
+  const [queryResults, setQueryResults] = useState<QueryResults | null>(null);
+  const [isQueryLoading, setIsQueryLoading] = useState(false);
+
   const formatMoney = createMoneyFormatter('USD');
 
   // ============================================
@@ -214,6 +225,15 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
       if (tx.productCategory) cats.add(tx.productCategory);
     });
     return ['all', ...Array.from(cats).sort()];
+  }, [transactionData]);
+
+  // Marketplaces list (for QueryBuilder)
+  const marketplaces = useMemo(() => {
+    const mps = new Set<string>();
+    transactionData.forEach(tx => {
+      if (tx.marketplaceCode) mps.add(tx.marketplaceCode);
+    });
+    return Array.from(mps).sort();
   }, [transactionData]);
 
   // Effective dates
@@ -472,6 +492,21 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
     setHiddenSeries(new Set(seriesKeys));
   }, [seriesKeys]);
 
+  // Query Builder Handler
+  const handleQuerySelect = useCallback((query: QueryParams) => {
+    setIsQueryLoading(true);
+    // Small delay for visual feedback
+    setTimeout(() => {
+      const results = executeQuery(transactionData, query);
+      setQueryResults(results);
+      setIsQueryLoading(false);
+    }, 300);
+  }, [transactionData]);
+
+  const handleCloseQueryResults = useCallback(() => {
+    setQueryResults(null);
+  }, []);
+
   // ============================================
   // FORMAT HELPERS
   // ============================================
@@ -544,6 +579,23 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <div className="max-w-7xl mx-auto">
+        {/* Query Builder - Quick Analysis */}
+        <QueryBuilder
+          onQuerySelect={handleQuerySelect}
+          availableMarketplaces={marketplaces}
+        />
+
+        {/* Query Results Panel */}
+        {(queryResults || isQueryLoading) && (
+          <div className="mb-6">
+            <QueryResultsPanel
+              results={queryResults}
+              onClose={handleCloseQueryResults}
+              isLoading={isQueryLoading}
+            />
+          </div>
+        )}
+
         {/* Header - Sticky below main nav */}
         <div className="bg-white rounded-xl shadow-sm p-4 mb-6 sticky top-[68px] z-40">
           <div className="flex items-center justify-between mb-4">

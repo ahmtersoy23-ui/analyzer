@@ -177,7 +177,8 @@ export const parseShippingRatesFromExcel = (
 };
 
 // Desi için kargo ücreti bul (üst bareme yuvarla)
-// Returns { rate, found, currency } - found=false means desi is out of range
+// Returns { rate, found, currency } - found=false means no rates defined at all
+// If desi exceeds the highest rate in table, uses the highest rate (extrapolation)
 export const getShippingRate = (
   rates: ShippingRateTable,
   route: ShippingRoute,
@@ -196,7 +197,7 @@ export const getShippingRate = (
     }
   }
 
-  // En yüksek desi'den büyükse, rate bulunamadı
+  // En yüksek desi'den büyükse, rate bulunamadı - kullanıcı override girmeli veya cetveli genişletmeli
   return { rate: 0, found: false, currency };
 };
 
@@ -309,8 +310,18 @@ export const loadCountryConfigs = (): AllCountryConfigs => {
   try {
     const stored = localStorage.getItem(STORAGE_KEYS.COUNTRY_CONFIGS);
     if (stored) {
-      return JSON.parse(stored) as AllCountryConfigs;
+      const parsed = JSON.parse(stored) as AllCountryConfigs;
+      console.log('✅ Country configs loaded from localStorage:', {
+        lastUpdated: parsed.lastUpdated,
+        countries: Object.keys(parsed.configs),
+        usConfig: parsed.configs.US ? {
+          fbaShipping: parsed.configs.US.fba.shippingPerDesi,
+          fbaWarehouse: parsed.configs.US.fba.warehousePercent,
+        } : null,
+      });
+      return parsed;
     }
+    console.log('ℹ️ No saved country configs found, using defaults');
     return createDefaultCountryConfigs();
   } catch (error) {
     console.error('Error loading country configs:', error);
@@ -323,6 +334,13 @@ export const saveCountryConfigs = (configs: AllCountryConfigs): void => {
   try {
     configs.lastUpdated = new Date().toISOString();
     localStorage.setItem(STORAGE_KEYS.COUNTRY_CONFIGS, JSON.stringify(configs));
+    console.log('💾 Country configs saved to localStorage:', {
+      lastUpdated: configs.lastUpdated,
+      usConfig: configs.configs.US ? {
+        fbaShipping: configs.configs.US.fba.shippingPerDesi,
+        fbaWarehouse: configs.configs.US.fba.warehousePercent,
+      } : null,
+    });
   } catch (error) {
     console.error('Error saving country configs:', error);
     throw new Error('Ülke ayarları kaydedilemedi');

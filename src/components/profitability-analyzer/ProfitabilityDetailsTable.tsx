@@ -27,8 +27,6 @@ interface ProfitabilityDetailsTableProps {
   productNames: string[];
   formatMoney: (amount: number) => string;
   onSelectItem: (item: SelectedItemType | null) => void;
-  totalCatalogProducts: number;
-  productsWithSales: number;
 }
 
 export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps> = ({
@@ -41,8 +39,6 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
   productNames,
   formatMoney,
   onSelectItem,
-  totalCatalogProducts,
-  productsWithSales,
 }) => {
   // Get filter state from context
   const {
@@ -275,11 +271,6 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
           <Tag className="w-5 h-5 text-indigo-600" />
           Details
           <ChevronRight className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-          {totalCatalogProducts > 0 && (
-            <span className="text-sm font-normal text-slate-500 ml-2">
-              {productsWithSales}/{totalCatalogProducts} products with sales
-            </span>
-          )}
         </h2>
         <div className="flex items-center gap-4">
           {/* Filter Info Display */}

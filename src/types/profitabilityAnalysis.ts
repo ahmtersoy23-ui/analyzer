@@ -328,3 +328,88 @@ export interface GlobalCostPercentages {
   fbmCostPercent: number;      // FBM Cost % = FBM expenses / FBM sales
   refundRecoveryRate: number;  // Refund recovery rate (0-1), e.g., 0.30 = 30% recovered
 }
+
+// ============================================
+// PRICING CALCULATOR EXPORT FORMAT
+// ============================================
+
+/**
+ * Category expense data for Pricing Calculator
+ * Contains all percentages needed for price calculation
+ */
+export interface PricingCategoryExpense {
+  category: string;
+  marketplace: string;           // US, UK, DE, etc.
+  fulfillmentType: 'FBA' | 'FBM' | 'Mixed';
+
+  // Sample info
+  sampleSize: number;            // Number of orders analyzed
+  totalRevenue: number;          // Total revenue for this category
+  totalQuantity: number;         // Total units sold
+  periodStart: string;           // Analysis period start (ISO date)
+  periodEnd: string;             // Analysis period end (ISO date)
+
+  // Amazon Fee Percentages (actual from transactions)
+  sellingFeePercent: number;     // Referral/commission fee %
+  fbaFeePercent: number;         // FBA fulfillment fee %
+  refundLossPercent: number;     // Refund loss after recovery %
+  vatPercent: number;            // VAT collected by Amazon %
+
+  // Cost Percentages
+  productCostPercent: number;    // COGS as % of revenue
+  shippingCostPercent: number;   // Shipping/logistics %
+  customsDutyPercent: number;    // Import duty %
+  ddpFeePercent: number;         // DDP fee %
+  warehouseCostPercent: number;  // Warehouse/storage %
+  gstCostPercent: number;        // GST/local tax %
+
+  // Global Cost Percentages
+  advertisingPercent: number;    // Ads spend %
+  fbaCostPercent: number;        // FBA overhead %
+  fbmCostPercent: number;        // FBM overhead %
+
+  // Profitability (for reference/default)
+  avgProfitMargin: number;       // Average profit margin %
+  avgROI: number;                // Average ROI %
+  avgSalePrice: number;          // Average selling price
+  avgProductCost: number;        // Average unit cost
+
+  // Fulfillment breakdown
+  fbaPercent: number;            // % of sales via FBA
+  fbmPercent: number;            // % of sales via FBM
+}
+
+/**
+ * Complete export package for Pricing Calculator
+ */
+export interface PricingCalculatorExport {
+  version: number;
+  exportedAt: string;
+  sourceApp: 'amazon-analyzer';
+
+  // Metadata
+  marketplace: string;           // Source marketplace (US, UK, etc.)
+  dateRange: {
+    start: string;
+    end: string;
+  };
+
+  // Global settings that apply to all categories
+  globalSettings: {
+    advertisingPercent: number;
+    fbaCostPercent: number;
+    fbmCostPercent: number;
+    refundRecoveryRate: number;
+  };
+
+  // Category-level expense data
+  categories: PricingCategoryExpense[];
+
+  // Summary stats
+  summary: {
+    totalCategories: number;
+    totalRevenue: number;
+    totalOrders: number;
+    avgMargin: number;
+  };
+}

@@ -4,6 +4,15 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+// Set favicon with cache busting
+const setFavicon = () => {
+  const existingLink = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
+  if (existingLink) {
+    existingLink.href = '/amzsellmetrics-icon.svg?v=' + Date.now();
+  }
+};
+setFavicon();
+
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
 );

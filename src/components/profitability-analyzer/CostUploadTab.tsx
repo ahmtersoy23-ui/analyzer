@@ -33,8 +33,8 @@ interface CostUploadTabProps {
   nameOverrides: NameOverride[];
   onOverridesChange: (overrides: NameOverride[]) => void;
   fbmNameInfo: FBMNameInfo[];  // FBM SKU'ları olan NAME listesi
-  totalCatalogProducts: number;
-  onTotalCatalogProductsChange: (value: number) => void;
+  // NEW: Callback to update costData directly with SKU-level overrides
+  onSkuOverrideUpdate: (updates: { sku: string; name: string; customShipping: number | null; fbmSource: 'TR' | 'US' | 'BOTH' | null }[]) => void;
 }
 
 // Group cost data by NAME for display
@@ -56,32 +56,69 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
   nameOverrides,
   onOverridesChange,
   fbmNameInfo,
-  totalCatalogProducts,
-  onTotalCatalogProductsChange,
+  onSkuOverrideUpdate,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showOverrideEditor, setShowOverrideEditor] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Manuel NAME ekleme state'leri (NAME bazlı override sistemi)
+  const [manualNameInput, setManualNameInput] = useState('');
+  const [manualCustomShipping, setManualCustomShipping] = useState<string>('');
+  const [manualFbmSource, setManualFbmSource] = useState<FBMSourceOverride | ''>('');
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    try {
-      const reader = new FileReader();
-      reader.onload = (event) => {
+    // Validate file type
+    const validExtensions = ['.xlsx', '.xls', '.csv'];
+    const fileExt = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+    if (!validExtensions.includes(fileExt)) {
+      alert(`Geçersiz dosya formatı: ${fileExt}\n\nDesteklenen formatlar: Excel (.xlsx, .xls) veya CSV (.csv)`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
         const data = new Uint8Array(event.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+        // Validate data structure - must have SKU column
+        if (jsonData.length === 0) {
+          alert('Dosya boş veya okunamadı.');
+          return;
+        }
+
+        const firstRow = jsonData[0] as Record<string, any>;
+        const hasSkuColumn = Object.keys(firstRow).some(
+          key => key.toLowerCase().includes('sku') || key.toLowerCase() === 'seller-sku' || key.toLowerCase() === 'seller sku'
+        );
+
+        if (!hasSkuColumn) {
+          const columns = Object.keys(firstRow).slice(0, 5).join(', ');
+          alert(`Geçersiz dosya formatı!\n\nBu dosyada SKU sütunu bulunamadı.\nBulunan sütunlar: ${columns}...\n\nDoğru maliyet dosyası yüklediğinizden emin olun.`);
+          return;
+        }
+
         onFileUpload(jsonData as Record<string, any>[]);
-      };
-      reader.readAsArrayBuffer(file);
-    } catch (error) {
-      console.error('File read error:', error);
-      alert('Dosya okunamadı');
-    }
+      } catch (error) {
+        console.error('File parse error:', error);
+        alert(`Dosya işlenirken hata oluştu:\n${error instanceof Error ? error.message : 'Bilinmeyen hata'}\n\nDoğru formatta bir Excel dosyası yüklediğinizden emin olun.`);
+      }
+    };
+
+    reader.onerror = () => {
+      console.error('File read error:', reader.error);
+      alert('Dosya okunamadı. Lütfen tekrar deneyin.');
+    };
+
+    reader.readAsArrayBuffer(file);
   };
 
   // Group data by NAME
@@ -164,6 +201,19 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
       newOverrides.push(newOverride);
       onOverridesChange(newOverrides);
     }
+
+    // NEW: Also update costData with SKU-level entries for this NAME
+    // Find all SKUs for this NAME from fbmNameInfo
+    const nameInfo = fbmNameInfo.find(info => info.name === name);
+    if (nameInfo && nameInfo.skus.length > 0) {
+      const skuUpdates = nameInfo.skus.map(sku => ({
+        sku,
+        name,
+        customShipping: newOverride.customShipping,
+        fbmSource: newOverride.fbmSource,
+      }));
+      onSkuOverrideUpdate(skuUpdates);
+    }
   };
 
   // Count overrides
@@ -171,6 +221,74 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
   const customShippingCount = nameOverrides.filter(o => o.customShipping !== null).length;
   const fbmSourceCount = nameOverrides.filter(o => o.fbmSource !== null).length;
   const totalAffectedSkus = nameOverrides.reduce((sum, o) => sum + o.fbmSkuCount, 0);
+
+  // Manuel NAME ekleme fonksiyonu (NAME bazlı override sistemi)
+  const handleManualNameAdd = () => {
+    if (!manualNameInput.trim()) return;
+
+    // NAME'leri satır sonu ile ayır (virgül ürün adının parçası olabilir)
+    const names = manualNameInput
+      .split(/\n+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    if (names.length === 0) return;
+
+    const customShipping = manualCustomShipping ? parseFloat(manualCustomShipping) : null;
+    const fbmSource = manualFbmSource || null;
+
+    // En az bir değer girilmiş olmalı
+    if (customShipping === null && fbmSource === null) {
+      alert('Lütfen en az bir değer girin (Custom Shipping veya FBM Source)');
+      return;
+    }
+
+    // Her NAME için yeni override oluştur
+    const newOverrides = [...nameOverrides];
+
+    names.forEach(name => {
+      // Mevcut override varsa güncelle
+      const existingIdx = newOverrides.findIndex(o => o.name === name);
+
+      // Bu NAME'in FBM SKU sayısını bul (varsa)
+      const nameInfo = fbmNameInfo.find(info => info.name === name);
+      const fbmSkuCount = nameInfo?.fbmSkus.length ?? 1;
+
+      if (existingIdx >= 0) {
+        newOverrides[existingIdx] = {
+          ...newOverrides[existingIdx],
+          customShipping: customShipping !== null ? customShipping : newOverrides[existingIdx].customShipping,
+          fbmSource: fbmSource !== null ? fbmSource : newOverrides[existingIdx].fbmSource,
+        };
+      } else {
+        // Yeni override ekle
+        newOverrides.push({
+          name,
+          customShipping,
+          fbmSource,
+          fbmSkuCount,
+        });
+      }
+
+      // costData'yı da güncelle - bu NAME altındaki tüm SKU'lar için
+      if (nameInfo && nameInfo.skus.length > 0) {
+        const skuUpdates = nameInfo.skus.map(sku => ({
+          sku,
+          name,
+          customShipping,
+          fbmSource,
+        }));
+        onSkuOverrideUpdate(skuUpdates);
+      }
+    });
+
+    onOverridesChange(newOverrides);
+
+    // Form'u temizle
+    setManualNameInput('');
+    setManualCustomShipping('');
+    setManualFbmSource('');
+  };
 
   return (
     <div className="space-y-6 pt-4">
@@ -220,6 +338,7 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
               />
             </div>
           </div>
+
         </div>
       )}
 
@@ -264,149 +383,210 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
       </div>
 
       {/* FBM Override Editor - NAME bazlı manuel giriş */}
-      {fbmNameInfo.length > 0 && (
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-base font-semibold text-purple-800">
-                🎯 FBM Özel Ayarları (NAME Bazlı)
-              </h3>
-              <p className="text-xs text-purple-600 mt-1">
-                Bir ürün adına değer girdiğinizde, altındaki tüm FBM SKU'lara uygulanır
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              {overrideCount > 0 && (
-                <span className="text-xs text-purple-600">
-                  {overrideCount} ürün ({totalAffectedSkus} SKU) • {customShippingCount} özel kargo • {fbmSourceCount} FBM kaynak
-                </span>
-              )}
-              <button
-                onClick={() => setShowOverrideEditor(!showOverrideEditor)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  showOverrideEditor
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                }`}
-              >
-                {showOverrideEditor ? 'Kapat' : `Düzenle ${overrideCount > 0 ? `(${overrideCount})` : ''}`}
-              </button>
-            </div>
+      <div className="bg-purple-50 border border-purple-200 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-semibold text-purple-800">
+              🎯 FBM Özel Ayarları
+            </h3>
+            <p className="text-xs text-purple-600 mt-1">
+              Manuel SKU ekleyin veya mevcut FBM ürünlerinin ayarlarını düzenleyin
+            </p>
           </div>
+          <div className="flex items-center gap-3">
+            {overrideCount > 0 && (
+              <span className="text-xs text-purple-600">
+                {overrideCount} ürün ({totalAffectedSkus} SKU) • {customShippingCount} özel kargo • {fbmSourceCount} FBM kaynak
+              </span>
+            )}
+            <button
+              onClick={() => setShowOverrideEditor(!showOverrideEditor)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                showOverrideEditor
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+              }`}
+            >
+              {showOverrideEditor ? 'Kapat' : `Düzenle ${overrideCount > 0 ? `(${overrideCount})` : ''}`}
+            </button>
+          </div>
+        </div>
 
-          {showOverrideEditor && (
+        {showOverrideEditor && (
             <div className="mt-4">
-              {/* Info */}
-              <div className="mb-4 p-3 bg-purple-100/50 rounded-lg text-xs text-purple-700">
-                <strong>Not:</strong> Sadece FBM veya Mixed (karma) satışı olan ürünler listelenir.
-                Girdiğiniz değerler o ürün altındaki tüm FBM SKU'lara uygulanır.
-              </div>
-
-              {/* Search */}
-              <div className="mb-4">
-                <input
-                  type="text"
-                  placeholder="Ürün adı veya SKU ara..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-4 py-2 border border-purple-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
-                />
-              </div>
-
-              {/* Override Table - NAME based */}
-              <div className="bg-white rounded-lg border border-purple-200 overflow-hidden">
-                <div className="max-h-96 overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-purple-100 sticky top-0">
-                      <tr>
-                        <th className="text-left px-3 py-2 font-medium text-purple-800">Ürün Adı (NAME)</th>
-                        <th className="text-center px-3 py-2 font-medium text-purple-800" title="FBM/Mixed SKU sayısı">
-                          FBM SKUs
-                        </th>
-                        <th className="text-center px-3 py-2 font-medium text-purple-800" title="Fulfillment dağılımı">
-                          FBA/FBM
-                        </th>
-                        <th className="text-center px-3 py-2 font-medium text-purple-800" title="Özel kargo ücreti (desi cetvelini bypass eder)">
-                          Custom Ship ($)
-                        </th>
-                        <th className="text-center px-3 py-2 font-medium text-purple-800" title="FBM gönderim kaynağı">
-                          FBM Source
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredNamesForOverride.map((info, idx) => {
-                        const override = overrideMap.get(info.name);
-                        const { fba, fbm, mixed } = info.fulfillmentBreakdown;
-                        return (
-                          <tr key={info.name} className={`border-b border-purple-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-purple-50/30'}`}>
-                            <td className="px-3 py-2 text-slate-700">
-                              <div className="font-medium truncate max-w-[280px]" title={info.name}>
-                                {info.name}
-                              </div>
-                              <div className="text-[10px] text-slate-400 mt-0.5">
-                                {info.fbmSkus.slice(0, 3).join(', ')}
-                                {info.fbmSkus.length > 3 && ` +${info.fbmSkus.length - 3}`}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
-                                {info.fbmSkus.length}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-center text-xs">
-                              <div className="flex items-center justify-center gap-1">
-                                {fba > 0 && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">{fba} FBA</span>}
-                                {fbm > 0 && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded">{fbm} FBM</span>}
-                                {mixed > 0 && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">{mixed} Mix</span>}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                placeholder="-"
-                                value={override?.customShipping ?? ''}
-                                onChange={(e) => {
-                                  const val = e.target.value ? parseFloat(e.target.value) : null;
-                                  handleOverrideChange(info.name, info.fbmSkus.length, 'customShipping', val);
-                                }}
-                                className="w-20 px-2 py-1 border border-slate-200 rounded text-center text-sm focus:outline-none focus:ring-1 focus:ring-purple-400"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <select
-                                value={override?.fbmSource || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value as FBMSourceOverride;
-                                  handleOverrideChange(info.name, info.fbmSkus.length, 'fbmSource', val || null);
-                                }}
-                                className="px-2 py-1 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-400"
-                              >
-                                <option value="">Varsayılan</option>
-                                <option value="TR">TR (Türkiye)</option>
-                                <option value="US">US (Lokal)</option>
-                                <option value="BOTH">BOTH (Karma)</option>
-                              </select>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              {/* Manuel Ürün (NAME) Ekleme */}
+              <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <h4 className="text-sm font-semibold text-orange-800 mb-3">
+                  ➕ Manuel Ürün Ekle (NAME)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs text-orange-700 mb-1">Ürün Adı (NAME)</label>
+                    <textarea
+                      value={manualNameInput}
+                      onChange={(e) => setManualNameInput(e.target.value)}
+                      placeholder="Ürün adı girin (her satıra bir ürün)"
+                      className="w-full px-3 py-2 border border-orange-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none"
+                      rows={2}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-orange-700 mb-1">Custom Ship ($)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={manualCustomShipping}
+                      onChange={(e) => setManualCustomShipping(e.target.value)}
+                      placeholder="Örn: 12.50"
+                      className="w-full px-3 py-2 border border-orange-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-orange-700 mb-1">FBM Source</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={manualFbmSource || ''}
+                        onChange={(e) => setManualFbmSource(e.target.value as FBMSourceOverride | '')}
+                        className="flex-1 px-3 py-2 border border-orange-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                      >
+                        <option value="">Seçin</option>
+                        <option value="TR">TR</option>
+                        <option value="US">US</option>
+                        <option value="BOTH">BOTH</option>
+                      </select>
+                      <button
+                        onClick={handleManualNameAdd}
+                        disabled={!manualNameInput.trim()}
+                        className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                        Ekle
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                {filteredNamesForOverride.length === 0 && (
-                  <div className="px-3 py-8 text-center text-sm text-slate-500">
-                    {searchTerm ? 'Arama sonucu bulunamadı' : 'FBM satışı olan ürün bulunamadı'}
-                  </div>
-                )}
-                {filteredNamesForOverride.length >= 50 && (
-                  <div className="px-3 py-2 bg-purple-100/50 text-xs text-purple-600 text-center">
-                    İlk 50 sonuç gösteriliyor. Daha fazla görmek için arama yapın.
-                  </div>
-                )}
+                <p className="text-xs text-orange-600 mt-2">
+                  💡 Birden fazla ürünü yeni satırla ayırarak toplu ekleyebilirsiniz. Girilen NAME'e ait tüm FBM SKU'lara uygulanır.
+                </p>
               </div>
+
+              {/* Mevcut FBM Ürünleri - sadece varsa göster */}
+              {fbmNameInfo.length > 0 && (
+                <>
+                  {/* Info */}
+                  <div className="mb-4 p-3 bg-purple-100/50 rounded-lg text-xs text-purple-700">
+                    <strong>Mevcut FBM Ürünleri:</strong> Aşağıda satış verilerinden tespit edilen FBM/Mixed ürünler listelenir.
+                  </div>
+
+                  {/* Search */}
+                  <div className="mb-4">
+                    <input
+                      type="text"
+                      placeholder="Ürün adı veya SKU ara..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full px-4 py-2 border border-purple-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Override Table - NAME based - sadece FBM ürün varsa göster */}
+              {fbmNameInfo.length > 0 && (
+                <div className="bg-white rounded-lg border border-purple-200 overflow-hidden">
+                  <div className="max-h-96 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-purple-100 sticky top-0">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium text-purple-800">Ürün Adı (NAME)</th>
+                          <th className="text-center px-3 py-2 font-medium text-purple-800" title="FBM/Mixed SKU sayısı">
+                            FBM SKUs
+                          </th>
+                          <th className="text-center px-3 py-2 font-medium text-purple-800" title="Fulfillment dağılımı">
+                            FBA/FBM
+                          </th>
+                          <th className="text-center px-3 py-2 font-medium text-purple-800" title="Özel kargo ücreti (desi cetvelini bypass eder)">
+                            Custom Ship ($)
+                          </th>
+                          <th className="text-center px-3 py-2 font-medium text-purple-800" title="FBM gönderim kaynağı">
+                            FBM Source
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredNamesForOverride.map((info, idx) => {
+                          const override = overrideMap.get(info.name);
+                          const { fba, fbm, mixed } = info.fulfillmentBreakdown;
+                          return (
+                            <tr key={info.name} className={`border-b border-purple-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-purple-50/30'}`}>
+                              <td className="px-3 py-2 text-slate-700">
+                                <div className="font-medium truncate max-w-[280px]" title={info.name}>
+                                  {info.name}
+                                </div>
+                                <div className="text-[10px] text-slate-400 mt-0.5">
+                                  {info.fbmSkus.slice(0, 3).join(', ')}
+                                  {info.fbmSkus.length > 3 && ` +${info.fbmSkus.length - 3}`}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
+                                  {info.fbmSkus.length}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-center text-xs">
+                                <div className="flex items-center justify-center gap-1">
+                                  {fba > 0 && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">{fba} FBA</span>}
+                                  {fbm > 0 && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded">{fbm} FBM</span>}
+                                  {mixed > 0 && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">{mixed} Mix</span>}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="-"
+                                  value={override?.customShipping ?? ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value ? parseFloat(e.target.value) : null;
+                                    handleOverrideChange(info.name, info.fbmSkus.length, 'customShipping', val);
+                                  }}
+                                  className="w-20 px-2 py-1 border border-slate-200 rounded text-center text-sm focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <select
+                                  value={override?.fbmSource || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value as FBMSourceOverride;
+                                    handleOverrideChange(info.name, info.fbmSkus.length, 'fbmSource', val || null);
+                                  }}
+                                  className="px-2 py-1 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                >
+                                  <option value="">Varsayılan</option>
+                                  <option value="TR">TR (Türkiye)</option>
+                                  <option value="US">US (Lokal)</option>
+                                  <option value="BOTH">BOTH (Karma)</option>
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {filteredNamesForOverride.length === 0 && (
+                    <div className="px-3 py-8 text-center text-sm text-slate-500">
+                      {searchTerm ? 'Arama sonucu bulunamadı' : 'FBM satışı olan ürün bulunamadı'}
+                    </div>
+                  )}
+                  {filteredNamesForOverride.length >= 50 && (
+                    <div className="px-3 py-2 bg-purple-100/50 text-xs text-purple-600 text-center">
+                      İlk 50 sonuç gösteriliyor. Daha fazla görmek için arama yapın.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Current Overrides Summary - Tablo formatında */}
               {nameOverrides.length > 0 && (
@@ -484,26 +664,6 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
               )}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Total Catalog Products Input */}
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-slate-700">
-            Toplam Katalog Ürün Sayısı:
-          </label>
-          <input
-            type="number"
-            value={totalCatalogProducts || ''}
-            onChange={(e) => onTotalCatalogProductsChange(parseInt(e.target.value, 10) || 0)}
-            placeholder="Örn: 1500"
-            className="w-32 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-          />
-          <span className="text-xs text-slate-500">
-            (Details başlığında satış oranı hesabı için kullanılır)
-          </span>
-        </div>
       </div>
 
       {/* Summary section */}

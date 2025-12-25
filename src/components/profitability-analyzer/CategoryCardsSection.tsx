@@ -456,7 +456,13 @@ export const CategoryCardsSection: React.FC<CategoryCardsSectionProps> = React.m
   const totalProducts = categoryProfitability.reduce((sum, c) => sum + c.totalProducts, 0);
   const totalOrders = categoryProfitability.reduce((sum, c) => sum + c.totalOrders, 0);
   const totalParents = categoryProfitability.reduce((sum, c) => sum + c.totalParents, 0);
+  const totalQuantity = categoryProfitability.reduce((sum, c) => sum + c.totalQuantity, 0);
+  const totalFbaQuantity = categoryProfitability.reduce((sum, c) => sum + c.fbaQuantity, 0);
+  const totalFbmQuantity = categoryProfitability.reduce((sum, c) => sum + c.fbmQuantity, 0);
   const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+  // Calculate overall fulfillment type
+  const overallFulfillment = totalFbmQuantity === 0 ? 'FBA' : totalFbaQuantity === 0 ? 'FBM' : 'Mixed';
 
   // Amazon Expenses
   const totalSellingFees = categoryProfitability.reduce((sum, c) => sum + c.sellingFees, 0);
@@ -568,7 +574,7 @@ export const CategoryCardsSection: React.FC<CategoryCardsSectionProps> = React.m
             </button>
           </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-stretch">
         {/* ALL Categories Card - Expandable Block in All Marketplaces mode */}
         <div className="flex flex-col">
           {/* Main All Categories Card */}
@@ -579,10 +585,23 @@ export const CategoryCardsSection: React.FC<CategoryCardsSectionProps> = React.m
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-indigo-800 text-base">All Categories</h3>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                    overallFulfillment === 'FBA' ? 'bg-blue-100 text-blue-700' :
+                    overallFulfillment === 'FBM' ? 'bg-green-100 text-green-700' :
+                    'bg-purple-100 text-purple-700'
+                  }`}>
+                    {overallFulfillment}
+                  </span>
                 </div>
                 <div className="text-xs text-indigo-600 mt-1">
                   {categoryProfitability.length} categories · {totalParents} parents · {totalProducts} products
                 </div>
+                {/* Mixed breakdown - show FBA/FBM percentages */}
+                {overallFulfillment === 'Mixed' && totalQuantity > 0 && (
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    {formatPercent((totalFbaQuantity / totalQuantity) * 100)} FBA · {formatPercent((totalFbmQuantity / totalQuantity) * 100)} FBM
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => toggleExpanded('__ALL__')}
@@ -807,7 +826,7 @@ export const CategoryCardsSection: React.FC<CategoryCardsSectionProps> = React.m
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2">
                       <h3 className="font-bold text-slate-800 text-base">{cat.category}</h3>
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                         cat.fulfillment === 'FBA' ? 'bg-blue-100 text-blue-700' :
@@ -817,9 +836,15 @@ export const CategoryCardsSection: React.FC<CategoryCardsSectionProps> = React.m
                         {cat.fulfillment}
                       </span>
                     </div>
-                    <div className="text-xs text-slate-500">
+                    <div className="text-xs text-slate-500 mt-1">
                       {cat.totalParents} parents · {cat.totalProducts} products
                     </div>
+                    {/* Mixed breakdown - show FBA/FBM percentages when category is Mixed */}
+                    {cat.fulfillment === 'Mixed' && cat.totalQuantity > 0 && (
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        {formatPercent((cat.fbaQuantity / cat.totalQuantity) * 100)} FBA · {formatPercent((cat.fbmQuantity / cat.totalQuantity) * 100)} FBM
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={(e) => {

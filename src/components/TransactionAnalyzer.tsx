@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Upload, FileSpreadsheet, Package, RefreshCw, AlertCircle, Save, Database, Trash2, Sparkles, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
+import { Upload, FileSpreadsheet, Package, RefreshCw, AlertCircle, Save, Database, Trash2, Sparkles, ChevronDown, ChevronUp, BarChart3, Download, FolderUp } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import * as DB from '../utils/indexedDB';
 import { getMarketplaceCurrency, CURRENCY_SYMBOLS } from '../utils/currencyExchange';
@@ -548,6 +548,9 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
             if (result.skipped > 0) {
               warnings.push(`${file.name}: ${result.skipped} duplicate işlem atlandı`);
             }
+
+            // Auto-save to localStorage after successful DB save
+            await DB.saveAutoBackup();
           } catch {
             warnings.push(`${file.name} veritabanına kaydedilemedi (devam edildi)`);
           }
@@ -629,6 +632,12 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
     const loadAllStoredData = async () => {
       try {
         setLoading(true);
+
+        // First, try to restore from localStorage backup (in case browser cleared IndexedDB)
+        const restored = await DB.loadAutoBackup();
+        if (restored) {
+          console.log('Data restored from auto-backup');
+        }
 
         // Get all marketplace metadata
         const metadataList = await DB.getAllMarketplaceMetadata();
@@ -1179,6 +1188,55 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                   </button>
                 )}
 
+              {/* Backup Download */}
+              <button
+                onClick={async () => {
+                  try {
+                    await DB.downloadBackupFile();
+                  } catch {
+                    window.alert('❌ Yedekleme indirilirken hata oluştu!');
+                  }
+                }}
+                className="flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+                title="Verileri JSON olarak indir"
+              >
+                <Download className="w-4 h-4" />
+                <span className="text-sm font-medium">Yedekle</span>
+              </button>
+
+              {/* Backup Restore */}
+              <label
+                className="flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors cursor-pointer"
+                title="JSON yedekten geri yükle"
+              >
+                <FolderUp className="w-4 h-4" />
+                <span className="text-sm font-medium">Geri Yükle</span>
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+
+                    if (!window.confirm('⚠️ Mevcut veriler silinecek ve yedekten geri yüklenecek. Devam etmek istiyor musunuz?')) {
+                      e.target.value = '';
+                      return;
+                    }
+
+                    try {
+                      const result = await DB.importBackupFile(file);
+                      const total = result.imported.transactions + result.imported.metadata;
+                      window.alert(`✅ Yedek başarıyla yüklendi! ${total} kayıt geri yüklendi. Sayfa yenilenecek...`);
+                      window.location.reload();
+                    } catch {
+                      window.alert('❌ Yedek yüklenirken hata oluştu! Dosya formatını kontrol edin.');
+                    }
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+
               {/* Clear All Data */}
               <button
                 onClick={async () => {
@@ -1200,7 +1258,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                     }
                   }
                 }}
-                className="flex items-center justify-center gap-2 px-4 py-2 min-w-[120px] bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
                 title="Tüm verileri temizle (IndexedDB + Cache)"
               >
                 <Trash2 className="w-4 h-4" />

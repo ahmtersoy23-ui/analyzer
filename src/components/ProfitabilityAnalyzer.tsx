@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
-import { ChevronDown, ChevronUp, DollarSign, Truck, Settings, BarChart3, AlertTriangle, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronUp, DollarSign, Truck, Settings, BarChart3, AlertTriangle, RefreshCw, Download } from 'lucide-react';
 import { TransactionData, MarketplaceCode } from '../types/transaction';
 import {
   ProductCostData,
@@ -33,6 +33,7 @@ import {
   calculateParentProfitability,
   calculateSKUProfitability,
 } from '../services/profitability/profitabilityAnalytics';
+import { exportForPricingCalculator, bulkExportForPriceLab } from '../services/profitability/pricingExport';
 import {
   calculateAdvertisingCost,
   calculateFBACosts,
@@ -73,7 +74,7 @@ const TabLoadingFallback = () => (
 
 // Storage key for NAME overrides
 const NAME_OVERRIDES_STORAGE_KEY = 'amazon-analyzer-name-overrides';
-const TOTAL_CATALOG_PRODUCTS_KEY = 'amazon-analyzer-total-catalog-products';
+const COST_DATA_STORAGE_KEY = 'amazon-analyzer-cost-data';
 
 // Empty result constants for stable references (prevents unnecessary re-renders)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,7 +136,14 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   // ============================================
   // CONFIG DATA STATES
   // ============================================
-  const [costData, setCostData] = useState<ProductCostData[]>([]);
+  const [costData, setCostData] = useState<ProductCostData[]>(() => {
+    try {
+      const saved = localStorage.getItem(COST_DATA_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [costSummary, setCostSummary] = useState<CostDataSummary | null>(null);
   const [shippingRates, setShippingRates] = useState<ShippingRateTable | null>(null);
   const [countryConfigs, setCountryConfigs] = useState<AllCountryConfigs | null>(null);
@@ -156,20 +164,17 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     localStorage.setItem(NAME_OVERRIDES_STORAGE_KEY, JSON.stringify(nameOverrides));
   }, [nameOverrides]);
 
-  // Total catalog products - manually entered
-  const [totalCatalogProducts, setTotalCatalogProducts] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(TOTAL_CATALOG_PRODUCTS_KEY);
-      return saved ? parseInt(saved, 10) : 0;
-    } catch {
-      return 0;
-    }
-  });
-
-  // Save total catalog products to localStorage
+  // Save cost data to localStorage (only when it has actual uploaded data, not extracted data)
   useEffect(() => {
-    localStorage.setItem(TOTAL_CATALOG_PRODUCTS_KEY, totalCatalogProducts.toString());
-  }, [totalCatalogProducts]);
+    // Only save if we have cost data and it wasn't just extracted from transactions
+    if (costData.length > 0) {
+      try {
+        localStorage.setItem(COST_DATA_STORAGE_KEY, JSON.stringify(costData));
+      } catch (e) {
+        console.warn('Cost data too large for localStorage, skipping save');
+      }
+    }
+  }, [costData]);
 
   // Pie Chart Modal State (type imported from PieChartModal)
   const [selectedItem, setSelectedItem] = useState<SelectedItemType>(null);
@@ -244,28 +249,12 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       };
     });
 
-    // Step 4: Apply NAME-level overrides
-    // These are US-specific (customShipping, fbmSource) but should be applied
-    // even in All Marketplaces mode so calculateSKUProfitability can use them
-    // for US entries. The function handles marketplace-specific logic internally.
-    if (nameOverrides.length > 0) {
-      const overrideByName = new Map<string, NameOverride>();
-      nameOverrides.forEach(o => overrideByName.set(o.name, o));
-
-      result = result.map(item => {
-        const override = overrideByName.get(item.name);
-        if (!override) return item;
-
-        return {
-          ...item,
-          customShipping: override.customShipping ?? item.customShipping,
-          fbmSource: override.fbmSource ?? item.fbmSource,
-        };
-      });
-    }
+    // Note: NAME-level overrides (customShipping, fbmSource) are now directly written to costData
+    // via handleSkuOverrideUpdate callback when user changes override values in CostUploadTab.
+    // This eliminates the need for complex NAME→SKU mapping at this stage.
 
     return result;
-  }, [costData, nameOverrides]);
+  }, [costData]);
 
   // ============================================
   // AVAILABLE CATEGORIES (from transactions)
@@ -546,13 +535,40 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     return [...profitabilityProducts, ...excludedProducts];
   }, [profitabilityProducts, excludedProducts]);
 
+  // Filter SKUs by fulfillment for category cards calculation
+  // FBA filter: FBA + Mixed, FBM filter: only FBM
+  const filteredByFulfillmentSkus = useMemo(() => {
+    if (filterFulfillment === 'all') return skuProfitability;
+    if (filterFulfillment === 'FBA') {
+      return skuProfitability.filter(s => s.fulfillment === 'FBA' || s.fulfillment === 'Mixed');
+    }
+    // FBM: only pure FBM, no Mixed
+    return skuProfitability.filter(s => s.fulfillment === 'FBM');
+  }, [skuProfitability, filterFulfillment]);
+
+  // Products from fulfillment-filtered SKUs (for category cards)
+  const filteredProducts = useMemo(() => {
+    if (filteredByFulfillmentSkus.length === 0) return EMPTY_ARRAY;
+    return calculateProductProfitability(filteredByFulfillmentSkus);
+  }, [filteredByFulfillmentSkus]);
+
   const parentProfitability = useMemo(() => {
     return calculateParentProfitability(profitabilityProducts);
   }, [profitabilityProducts]);
 
+  // Parent profitability from filtered products (for category cards)
+  const filteredParentProfitability = useMemo(() => {
+    return calculateParentProfitability(filteredProducts);
+  }, [filteredProducts]);
+
   const categoryProfitability = useMemo(() => {
     return calculateCategoryProfitability(parentProfitability, profitabilityProducts);
   }, [parentProfitability, profitabilityProducts]);
+
+  // Category profitability from filtered parents (for category cards)
+  const filteredCategoryProfitability = useMemo(() => {
+    return calculateCategoryProfitability(filteredParentProfitability, filteredProducts);
+  }, [filteredParentProfitability, filteredProducts]);
 
   // Filtered Parent and Category profitability (for detail tables)
   const displayParents = useMemo(() => {
@@ -568,9 +584,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       filtered = filtered.filter(p => p.parent === filterParent);
     }
 
-    // Fulfillment filter - show only exact matches
-    if (filterFulfillment !== 'all') {
-      filtered = filtered.filter(p => p.fulfillment === filterFulfillment);
+    // Fulfillment filter - FBA shows FBA+Mixed, FBM shows only FBM
+    if (filterFulfillment === 'FBA') {
+      filtered = filtered.filter(p => p.fulfillment === 'FBA' || p.fulfillment === 'Mixed');
+    } else if (filterFulfillment === 'FBM') {
+      filtered = filtered.filter(p => p.fulfillment === 'FBM');
     }
 
     // Sort by revenue descending
@@ -587,9 +605,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       filtered = filtered.filter(c => c.category === filterCategory);
     }
 
-    // Fulfillment filter - show only exact matches
-    if (filterFulfillment !== 'all') {
-      filtered = filtered.filter(c => c.fulfillment === filterFulfillment);
+    // Fulfillment filter - FBA shows FBA+Mixed, FBM shows only FBM
+    if (filterFulfillment === 'FBA') {
+      filtered = filtered.filter(c => c.fulfillment === 'FBA' || c.fulfillment === 'Mixed');
+    } else if (filterFulfillment === 'FBM') {
+      filtered = filtered.filter(c => c.fulfillment === 'FBM');
     }
 
     // Sort by revenue descending
@@ -707,9 +727,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       filtered = filtered.filter(p => p.name === filterName);
     }
 
-    // Fulfillment filter - show only exact matches
-    if (filterFulfillment !== 'all') {
-      filtered = filtered.filter(p => p.fulfillment === filterFulfillment);
+    // Fulfillment filter - FBA shows FBA+Mixed, FBM shows only FBM
+    if (filterFulfillment === 'FBA') {
+      filtered = filtered.filter(p => p.fulfillment === 'FBA' || p.fulfillment === 'Mixed');
+    } else if (filterFulfillment === 'FBM') {
+      filtered = filtered.filter(p => p.fulfillment === 'FBM');
     }
 
     // Sort
@@ -794,12 +816,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       filtered = filtered.filter(s => s.name === filterName);
     }
 
-    // Fulfillment filter - show only exact matches, exclude Mixed from single-type filters
-    if (filterFulfillment !== 'all') {
-      filtered = filtered.filter(s => {
-        // Only show exact fulfillment matches - Mixed SKUs are excluded from FBA/FBM-only filters
-        return s.fulfillment === filterFulfillment;
-      });
+    // Fulfillment filter - FBA shows FBA+Mixed, FBM shows only FBM
+    if (filterFulfillment === 'FBA') {
+      filtered = filtered.filter(s => s.fulfillment === 'FBA' || s.fulfillment === 'Mixed');
+    } else if (filterFulfillment === 'FBM') {
+      filtered = filtered.filter(s => s.fulfillment === 'FBM');
     }
 
     // Sort
@@ -914,6 +935,74 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     } catch {
       // Parse error - invalid file format
     }
+  }, []);
+
+  // Handle inline cost/size/override updates from CoverageStatsSection
+  const handleInlineCostUpdate = useCallback((updates: { sku: string; name: string; cost: number | null; size: number | null; customShipping?: number | null; fbmSource?: 'TR' | 'US' | 'BOTH' | null }[]) => {
+    setCostData(prev => {
+      const newData = [...prev];
+
+      updates.forEach(update => {
+        const existingIndex = newData.findIndex(item => item.sku === update.sku);
+
+        if (existingIndex >= 0) {
+          // Update existing entry
+          newData[existingIndex] = {
+            ...newData[existingIndex],
+            cost: update.cost ?? newData[existingIndex].cost,
+            size: update.size ?? newData[existingIndex].size,
+            // Also update override fields if provided
+            ...(update.customShipping !== undefined && { customShipping: update.customShipping }),
+            ...(update.fbmSource !== undefined && { fbmSource: update.fbmSource }),
+          };
+        } else {
+          // Add new entry
+          newData.push({
+            sku: update.sku,
+            name: update.name,
+            cost: update.cost,
+            size: update.size,
+            customShipping: update.customShipping ?? null,
+            fbmSource: update.fbmSource ?? null,
+          });
+        }
+      });
+
+      return newData;
+    });
+  }, []);
+
+  // Handle SKU-level override updates from CostUploadTab
+  // This directly updates costData with customShipping and fbmSource for each SKU
+  const handleSkuOverrideUpdate = useCallback((updates: { sku: string; name: string; customShipping: number | null; fbmSource: 'TR' | 'US' | 'BOTH' | null }[]) => {
+    setCostData(prev => {
+      const newData = [...prev];
+
+      updates.forEach(update => {
+        const existingIndex = newData.findIndex(item => item.sku === update.sku);
+
+        if (existingIndex >= 0) {
+          // Update existing entry - preserve cost/size, update override fields
+          newData[existingIndex] = {
+            ...newData[existingIndex],
+            customShipping: update.customShipping,
+            fbmSource: update.fbmSource,
+          };
+        } else {
+          // Add new entry with override fields
+          newData.push({
+            sku: update.sku,
+            name: update.name,
+            cost: null,
+            size: null,
+            customShipping: update.customShipping,
+            fbmSource: update.fbmSource,
+          });
+        }
+      });
+
+      return newData;
+    });
   }, []);
 
   // Handle shipping rates upload
@@ -1055,8 +1144,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
                   nameOverrides={nameOverrides}
                   onOverridesChange={setNameOverrides}
                   fbmNameInfo={fbmNameInfo}
-                  totalCatalogProducts={totalCatalogProducts}
-                  onTotalCatalogProductsChange={setTotalCatalogProducts}
+                  onSkuOverrideUpdate={handleSkuOverrideUpdate}
                 />
               </Suspense>
             </div>
@@ -1150,12 +1238,14 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           setShowExcludedProducts={setShowExcludedProducts}
           filterMarketplace={filterMarketplace}
           formatMoney={formatMoney}
+          costData={costData}
+          onCostDataUpdate={handleInlineCostUpdate}
         />
 
         {/* Category Cards - Extracted Component */}
         <CategoryCardsSection
-          categoryProfitability={categoryProfitability}
-          skuProfitability={skuProfitability}
+          categoryProfitability={filteredCategoryProfitability}
+          skuProfitability={filteredByFulfillmentSkus}
           expandedCategories={expandedCategories}
           setExpandedCategories={setExpandedCategories}
           filterCategory={filterCategory}
@@ -1167,6 +1257,111 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           formatMoney={formatMoney}
           formatPercent={formatPercent}
         />
+
+        {/* Bulk Export for PriceLab - Show when All Marketplaces selected */}
+        {filterMarketplace === 'all' && skuProfitability.length > 0 && (
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <Download className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-emerald-800">PriceLab Toplu Export</h3>
+                  <p className="text-sm text-emerald-600">
+                    Tüm pazaryerleri için FBA+FBM verileri · Her ülke ayrı sayfa ·
+                    {startDate || endDate ? ` ${startDate || '∞'} - ${endDate || '∞'}` : ' Tüm dönem'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const dates = filteredTransactions.map(t => new Date(t.date).getTime());
+                    const minDate = dates.length > 0 ? new Date(Math.min(...dates)) : new Date();
+                    const maxDate = dates.length > 0 ? new Date(Math.max(...dates)) : new Date();
+                    const dateRange = {
+                      start: startDate ? new Date(startDate) : minDate,
+                      end: endDate ? new Date(endDate) : maxDate,
+                    };
+                    bulkExportForPriceLab(skuProfitability, dateRange, 'excel');
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Excel İndir
+                </button>
+                <button
+                  onClick={() => {
+                    const dates = filteredTransactions.map(t => new Date(t.date).getTime());
+                    const minDate = dates.length > 0 ? new Date(Math.min(...dates)) : new Date();
+                    const maxDate = dates.length > 0 ? new Date(Math.max(...dates)) : new Date();
+                    const dateRange = {
+                      start: startDate ? new Date(startDate) : minDate,
+                      end: endDate ? new Date(endDate) : maxDate,
+                    };
+                    bulkExportForPriceLab(skuProfitability, dateRange, 'json');
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-lg font-medium transition-colors"
+                >
+                  JSON
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-emerald-500 mt-2">
+              Tek seferde tüm ülkeler için kategori bazlı gider oranlarını indirin. Her ülke ayrı Excel sayfasında, FBA ve FBM ayrı satırlarda.
+            </p>
+          </div>
+        )}
+
+        {/* Export for Pricing Calculator - Show only when single marketplace selected and has category data */}
+        {filterMarketplace !== 'all' && selectedMarketplaces.size === 0 && categoryProfitability.length > 0 && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Download className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-blue-800">Pricing Calculator Export</h3>
+                  <p className="text-sm text-blue-600">
+                    {categoryProfitability.length} kategori · {filterMarketplace} pazarı ·
+                    {startDate || endDate ? ` ${startDate || '∞'} - ${endDate || '∞'}` : ' Tüm dönem'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  // Calculate date range from filtered transactions
+                  const dates = filteredTransactions.map(t => new Date(t.date).getTime());
+                  const minDate = dates.length > 0 ? new Date(Math.min(...dates)) : new Date();
+                  const maxDate = dates.length > 0 ? new Date(Math.max(...dates)) : new Date();
+
+                  // Use filter dates if specified, otherwise use transaction date range
+                  const dateRange = {
+                    start: startDate ? new Date(startDate) : minDate,
+                    end: endDate ? new Date(endDate) : maxDate,
+                  };
+
+                  exportForPricingCalculator(
+                    categoryProfitability,
+                    skuProfitability,
+                    costPercentages,
+                    filterMarketplace,
+                    dateRange
+                  );
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export JSON
+              </button>
+            </div>
+            <p className="text-xs text-blue-500 mt-2">
+              Bu dosyayı Pricing Calculator'a import ederek kategori bazlı gider yüzdelerini ve ortalama marjları kullanabilirsiniz.
+            </p>
+          </div>
+        )}
 
         {/* Details Table - Extracted Component */}
         {profitabilityProducts.length > 0 && (
@@ -1180,8 +1375,6 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
             productNames={productNames}
             formatMoney={formatMoney}
             onSelectItem={setSelectedItem}
-            totalCatalogProducts={totalCatalogProducts}
-            productsWithSales={allProducts.filter(p => p.totalQuantity > 0).length}
           />
         )}
 

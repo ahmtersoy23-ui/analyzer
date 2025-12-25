@@ -507,3 +507,221 @@ export const checkDateRangeOverlap = async (
   // In new structure, overlaps are handled automatically by deduplication
   return { hasOverlap: false, overlappingFiles: [] };
 };
+
+// ============================================
+// JSON EXPORT/IMPORT (Persistent Backup)
+// ============================================
+
+export interface AnalyzerBackup {
+  version: number;
+  exportedAt: string;
+  data: {
+    transactions: TransactionData[];
+    metadata: MarketplaceMetadata[];
+  };
+}
+
+const BACKUP_VERSION = 1;
+const AUTO_BACKUP_KEY = 'amazonAnalyzerAutoBackup';
+const LAST_BACKUP_KEY = 'amazonAnalyzerLastBackup';
+
+/**
+ * Export all database data to JSON
+ */
+export const exportDatabaseToJSON = async (): Promise<AnalyzerBackup> => {
+  const transactions = await getAllTransactions();
+  const metadata = await getAllMarketplaceMetadata();
+
+  const backup: AnalyzerBackup = {
+    version: BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: {
+      transactions,
+      metadata,
+    },
+  };
+
+  return backup;
+};
+
+/**
+ * Import database from JSON backup
+ */
+export const importDatabaseFromJSON = async (backup: AnalyzerBackup, clearExisting: boolean = true): Promise<{
+  imported: {
+    transactions: number;
+    metadata: number;
+  };
+}> => {
+  const db = await initDB();
+
+  const imported = {
+    transactions: 0,
+    metadata: 0,
+  };
+
+  // Clear existing data if requested
+  if (clearExisting) {
+    await clearAllData();
+  }
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([TRANSACTIONS_STORE, METADATA_STORE], 'readwrite');
+    const transactionStore = transaction.objectStore(TRANSACTIONS_STORE);
+    const metadataStore = transaction.objectStore(METADATA_STORE);
+
+    // Import transactions
+    if (backup.data.transactions?.length > 0) {
+      for (const trans of backup.data.transactions) {
+        transactionStore.put({
+          ...trans,
+          date: new Date(trans.date),
+          uploadDate: new Date(trans.uploadDate),
+        });
+        imported.transactions++;
+      }
+    }
+
+    // Import metadata
+    if (backup.data.metadata?.length > 0) {
+      for (const meta of backup.data.metadata) {
+        metadataStore.put({
+          ...meta,
+          lastUpdate: new Date(meta.lastUpdate),
+          dateRange: {
+            start: new Date(meta.dateRange.start),
+            end: new Date(meta.dateRange.end),
+          },
+          uploadHistory: meta.uploadHistory.map(h => ({
+            ...h,
+            date: new Date(h.date),
+          })),
+        });
+        imported.metadata++;
+      }
+    }
+
+    transaction.oncomplete = () => {
+      console.log('✅ Database imported from JSON backup');
+      resolve({ imported });
+    };
+
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+/**
+ * Save backup to localStorage (auto-save)
+ */
+export const saveAutoBackup = async (): Promise<void> => {
+  try {
+    const backup = await exportDatabaseToJSON();
+    const jsonString = JSON.stringify(backup);
+
+    // Save to localStorage
+    localStorage.setItem(AUTO_BACKUP_KEY, jsonString);
+    localStorage.setItem(LAST_BACKUP_KEY, new Date().toISOString());
+
+    console.log('✅ Auto-backup saved to localStorage');
+  } catch (error) {
+    console.error('❌ Auto-backup failed:', error);
+  }
+};
+
+/**
+ * Load backup from localStorage (auto-load on startup)
+ */
+export const loadAutoBackup = async (): Promise<boolean> => {
+  try {
+    const jsonString = localStorage.getItem(AUTO_BACKUP_KEY);
+    if (!jsonString) {
+      console.log('ℹ️ No auto-backup found in localStorage');
+      return false;
+    }
+
+    const backup = JSON.parse(jsonString) as AnalyzerBackup;
+
+    // Check if IndexedDB is empty
+    const currentTransactions = await getAllTransactions();
+
+    // Only restore if IndexedDB is empty (browser was cleared)
+    if (currentTransactions.length === 0) {
+      await importDatabaseFromJSON(backup, true);
+      console.log('✅ Auto-backup restored from localStorage');
+      return true;
+    }
+
+    console.log('ℹ️ IndexedDB has data, skipping auto-restore');
+    return false;
+  } catch (error) {
+    console.error('❌ Auto-backup load failed:', error);
+    return false;
+  }
+};
+
+/**
+ * Get last backup timestamp
+ */
+export const getLastBackupTime = (): Date | null => {
+  const timestamp = localStorage.getItem(LAST_BACKUP_KEY);
+  return timestamp ? new Date(timestamp) : null;
+};
+
+/**
+ * Download backup as JSON file
+ */
+export const downloadBackupFile = async (): Promise<void> => {
+  const backup = await exportDatabaseToJSON();
+  const jsonString = JSON.stringify(backup, null, 2);
+  const blob = new Blob([jsonString], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  const date = new Date().toISOString().split('T')[0];
+  const filename = `amazon-analyzer-backup-${date}.json`;
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Import backup from file
+ */
+export const importBackupFile = async (file: File): Promise<{
+  imported: {
+    transactions: number;
+    metadata: number;
+  };
+}> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      try {
+        const jsonString = e.target?.result as string;
+        const backup = JSON.parse(jsonString) as AnalyzerBackup;
+
+        // Validate backup structure
+        if (!backup.version || !backup.data) {
+          throw new Error('Invalid backup file format');
+        }
+
+        const result = await importDatabaseFromJSON(backup, true);
+
+        // Save to localStorage as well
+        await saveAutoBackup();
+
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+};
