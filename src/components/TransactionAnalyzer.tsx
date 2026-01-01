@@ -1,26 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Upload, FileSpreadsheet, Package, RefreshCw, AlertCircle, Save, Database, Trash2, Sparkles, ChevronDown, ChevronUp, BarChart3, Download, FolderUp } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import * as DB from '../utils/indexedDB';
+import { exportTransactionsToExcel } from '../utils/excelExport';
 import { getMarketplaceCurrency, CURRENCY_SYMBOLS } from '../utils/currencyExchange';
 import type { MarketplaceCode, TransactionData, MarketplaceConfig } from '../types/transaction';
 import { MARKETPLACE_CONFIGS, ZONE_NAMES } from '../constants/marketplaces';
 import { calculateAnalytics } from '../services/analytics/analyticsEngine';
+import { processExcelFile, detectMarketplaceFromFile } from '../services/fileProcessor';
 import AdvancedDashboard from './dashboard/AdvancedDashboard';
 import { fetchProductMapping, createProductMap, enrichTransaction } from '../services/productMapping';
 
 // Import extracted helpers and components
-import {
-  findColumn,
-  detectFulfillment,
-  categorizeTransactionType,
-  parseNumber,
-  parseDate,
-  extractDateOnly,
-  detectMarketplace,
-  translateDescription,
-  formatDateHuman
-} from './transaction-analyzer/helpers';
+import { formatDateHuman, translateDescription } from './transaction-analyzer/helpers';
 import { PieChart } from './transaction-analyzer/PieChart';
 import { SummaryCards } from './transaction-analyzer/SummaryCards';
 import { TransactionFilters } from './transaction-analyzer/TransactionFilters';
@@ -201,255 +192,14 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
     return data;
   };
 
+  // processFile now uses the extracted fileProcessor service
   const processFile = async (file: File, detectedMarketplace?: MarketplaceCode): Promise<TransactionData[]> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+    return processExcelFile(file, detectedMarketplace);
+  };
 
-      reader.onload = (e) => {
-        try {
-          // Config artık detectedMarketplace'den gelecek
-          const fileConfig = detectedMarketplace ? CONFIGS[detectedMarketplace] : config;
-
-          if (!fileConfig) {
-            throw new Error('Marketplace tespit edilemedi');
-          }
-          
-          if (!e.target?.result) throw new Error('Dosya okunamadı');
-          const data = new Uint8Array(e.target.result as ArrayBuffer);
-          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
-
-          let headerRowIndex = -1;
-          for (let i = 0; i < Math.min(jsonData.length, 20); i++) {
-            const row = jsonData[i];
-            if (row && Array.isArray(row) && row.length > 5 && row.some((cell: any) =>
-              String(cell).toLowerCase().includes('date') ||
-              String(cell).toLowerCase().includes('type') ||
-              String(cell).toLowerCase().includes('sku')
-            )) {
-              headerRowIndex = i;
-              break;
-            }
-          }
-
-          if (headerRowIndex === -1) {
-            throw new Error('Header satırı bulunamadı');
-          }
-
-          const headers = jsonData[headerRowIndex] as string[];
-          const dataRows = jsonData.slice(headerRowIndex + 1).filter((row: any) =>
-            row && Array.isArray(row) && row.length > 0 && row.some((cell: any) => cell !== '' && cell !== null)
-          );
-
-          // Multi-language column mapping - supports EN, DE, FR, IT, ES
-          const columnMap: Record<string, string | null> = {
-            date: findColumn(headers, [
-              'date/time', 'date', 'datetime', 'posted date',              // EN
-              'datum/uhrzeit',                                              // DE
-              'date/heure',                                                 // FR
-              'data/ora:',                                                  // IT
-              'fecha y hora'                                                // ES
-            ]),
-            type: findColumn(headers, [
-              'type', 'transaction type',                                   // EN
-              'typ',                                                        // DE
-              'type',                                                       // FR (same)
-              'tipo',                                                       // IT
-              'tipo'                                                        // ES (same)
-            ]),
-            orderId: findColumn(headers, [
-              'order id', 'orderid', 'amazon order id',                    // EN
-              'bestellnummer',                                             // DE
-              'numéro de la commande',                                     // FR
-              'numero ordine',                                             // IT
-              'número de pedido'                                           // ES
-            ]),
-            sku: findColumn(headers, [
-              'sku', 'seller sku'                                          // EN (same for all)
-            ]),
-            description: findColumn(headers, [
-              'description', 'desc',                                       // EN
-              'beschreibung',                                              // DE
-              'description',                                               // FR (same)
-              'descrizione',                                               // IT
-              'descripción'                                                // ES
-            ]),
-            marketplace: findColumn(headers, [
-              'marketplace', 'market',                                     // EN
-              'marketplace',                                               // DE (same)
-              'marketplace',                                               // FR (same)
-              'marketplace',                                               // IT (same)
-              'web de amazon'                                              // ES
-            ]),
-            fulfillment: findColumn(headers, [
-              'fulfillment', 'fulfillment channel', 'fulfilment',          // EN
-              'versand',                                                   // DE
-              'traitement',                                                // FR
-              'gestione',                                                  // IT
-              'gestión logística'                                          // ES
-            ]),
-            orderPostal: findColumn(headers, [
-              'order postal', 'postal code', 'zip',                        // EN
-              'postleitzahl',                                              // DE
-              'code postal de la commande',                                // FR
-              'cap dell\'ordine',                                          // IT
-              'código postal de procedencia del pedido'                    // ES
-            ]),
-            quantity: findColumn(headers, [
-              'quantity', 'qty',                                           // EN
-              'menge',                                                     // DE
-              'quantité',                                                  // FR
-              'quantità',                                                  // IT
-              'cantidad'                                                   // ES
-            ]),
-            productSalesTax: findColumn(headers, [
-              'product sales tax', 'productsalestax',                      // EN - US/UK
-              'sales tax collection',                                      // EN - AU/CA (GST)
-              'produktumsatzsteuer',                                       // DE
-              'taxes sur la vente des produits',                           // FR
-              'imposta sulle vendite dei prodotti',                        // IT
-              'impuesto de ventas de productos'                            // ES
-            ]),
-            productSales: findColumn(headers, [
-              'product sales', 'productsales', 'principal',                // EN
-              'umsätze',                                                   // DE
-              'ventes de produits',                                        // FR
-              'vendite',                                                   // IT
-              'ventas de productos'                                        // ES
-            ]),
-            promotionalRebates: findColumn(headers, [
-              'promotional rebates', 'promotions', 'promo',                // EN
-              'rabatte aus werbeaktionen',                                 // DE
-              'rabais promotionnels',                                      // FR
-              'sconti promozionali',                                       // IT
-              'devoluciones promocionales'                                 // ES
-            ]),
-            sellingFees: findColumn(headers, [
-              'selling fees', 'sellingfees', 'commission',                 // EN
-              'verkaufsgebühren',                                          // DE
-              'frais de vente',                                            // FR
-              'commissioni di vendita',                                    // IT
-              'tarifas de venta'                                           // ES
-            ]),
-            fbaFees: findColumn(headers, [
-              'fba fees', 'fbafees', 'fulfillment fee',                    // EN
-              'fulfilment by amazon fees',                                 // AU
-              'gebühren zu versand durch amazon',                          // DE
-              'frais expédié par amazon',                                  // FR
-              'costi del servizio logistica di amazon',                    // IT
-              'tarifas de logística de amazon'                             // ES
-            ]),
-            otherTransactionFees: findColumn(headers, [
-              'other transaction fees', 'otherfees', 'other fees',         // EN
-              'andere transaktionsgebühren',                               // DE
-              'autres frais de transaction',                               // FR
-              'altri costi relativi alle transazioni',                     // IT
-              'tarifas de otras transacciones'                             // ES
-            ]),
-            other: findColumn(headers, [
-              'other',                                                     // EN
-              'andere',                                                    // DE
-              'autre',                                                     // FR
-              'altro',                                                     // IT
-              'otro'                                                       // ES
-            ]),
-            marketplaceWithheldTax: findColumn(headers, [
-              'marketplace withheld tax', 'tax withheld', 'vat withheld',  // EN
-              'einbehaltene steuer auf marketplace',                       // DE
-              'taxes retenues sur le site de vente',                       // FR
-              'trattenuta iva del marketplace',                            // IT
-              'impuesto retenido en el sitio web'                          // ES
-            ]),
-            total: findColumn(headers, [
-              'total', 'net proceeds', 'net amount',                       // EN
-              'gesamt',                                                    // DE
-              'total',                                                     // FR (same)
-              'totale',                                                    // IT
-              'total'                                                      // ES (same)
-            ])
-          };
-
-          const processedData: TransactionData[] = dataRows.map((row: any[], index: number) => {
-            const getCell = (colName: string): any => {
-              if (!columnMap[colName]) return null;
-              const colIndex = headers.indexOf(columnMap[colName]!);
-              return colIndex !== -1 ? row[colIndex] : null;
-            };
-
-            const typeValue = getCell('type');
-            const categoryType = categorizeTransactionType(typeValue);
-
-            if (categoryType === null) return null;
-
-            const description = String(getCell('description') || '').trim();
-            const descriptionLower = description.toLowerCase();
-
-            // Product sales ve tax
-            const productSalesValue = parseNumber(getCell('productSales'));
-            const productSalesTaxValue = parseNumber(getCell('productSalesTax'));
-
-            // UK için VAT hesaplama - product sales tax'den (işaretini koruyarak)
-            let vat = 0;
-            if (fileConfig.hasVAT) {
-              vat = productSalesTaxValue; // Math.abs kullanma, işareti koru
-            }
-
-            // UK için Liquidations
-            const liquidations = (fileConfig.hasLiquidations && typeValue === 'Liquidations')
-              ? parseNumber(getCell('total'))
-              : 0;
-
-            // Other kolonu
-            const other = parseNumber(getCell('other'));
-
-            // Marketplace bilgisi - eğer satırda yoksa (örn. Transfer satırları) detected marketplace'i kullan
-            const marketplaceValue = getCell('marketplace');
-            const finalMarketplace = marketplaceValue || (detectedMarketplace ? `Amazon.${detectedMarketplace.toLowerCase()}` : 'Unknown');
-
-            // marketplaceCode: Önce satırdaki marketplace'den tespit et, yoksa detected marketplace'i kullan
-            // Bu alan enrichment sırasında SKU eşleştirmesi için kritik
-            const rowMarketplaceCode = marketplaceValue ? detectMarketplace(marketplaceValue) : null;
-            const finalMarketplaceCode = rowMarketplaceCode || detectedMarketplace || '';
-
-            const rawDateValue = getCell('date');
-            return {
-              id: `${file.name}-${index}`,
-              fileName: file.name,
-              date: parseDate(rawDateValue)!,
-              dateOnly: extractDateOnly(rawDateValue),  // Original date without timezone conversion (YYYY-MM-DD)
-              type: typeValue || '',
-              categoryType,
-              orderId: getCell('orderId') || '',
-              sku: getCell('sku') || '',
-              description,
-              descriptionLower,
-              marketplace: finalMarketplace,
-              marketplaceCode: finalMarketplaceCode,  // Eklendi: SKU eşleştirmesi için
-              fulfillment: detectFulfillment(getCell('fulfillment')),
-              orderPostal: getCell('orderPostal') || '',
-              quantity: parseNumber(getCell('quantity')),
-              productSales: fileConfig.grossSalesFormula(productSalesValue, productSalesTaxValue),
-              promotionalRebates: parseNumber(getCell('promotionalRebates')),
-              sellingFees: parseNumber(getCell('sellingFees')),
-              fbaFees: parseNumber(getCell('fbaFees')),
-              otherTransactionFees: parseNumber(getCell('otherTransactionFees')),
-              other,
-              vat,
-              liquidations,
-              total: parseNumber(getCell('total'))
-            };
-          }).filter((item): item is TransactionData => item !== null && item.date !== null);
-
-          resolve(processedData);
-        } catch (err: any) {
-          reject(new Error(`Dosya işlenirken hata: ${err.message}`));
-        }
-      };
-
-      reader.onerror = () => reject(new Error('Dosya okunamadı'));
-      reader.readAsArrayBuffer(file);
-    });
+  // Quick marketplace detection (for file upload preview)
+  const detectMarketplaceQuick = async (file: File): Promise<MarketplaceCode | null> => {
+    return detectMarketplaceFromFile(file);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -466,69 +216,9 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
       let totalAdded = 0;
       let totalSkipped = 0;
 
-      for (let file of uploadedFiles) {
-        // Önce dosyayı hafifçe okuyup marketplace'i tespit edelim
-        const quickRead = await new Promise<MarketplaceCode | null>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            try {
-              const data = new Uint8Array(e.target?.result as ArrayBuffer);
-              const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-              const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-              const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
-
-              // Header'ı bul - çok dilli destek
-              let headerRowIndex = -1;
-              for (let i = 0; i < Math.min(jsonData.length, 20); i++) {
-                const row = jsonData[i];
-                if (row && Array.isArray(row) && row.some((cell: any) => {
-                  const normalized = String(cell).toLowerCase();
-                  return normalized.includes('marketplace') ||
-                         normalized.includes('web de amazon') ||
-                         normalized.includes('market');
-                })) {
-                  headerRowIndex = i;
-                  break;
-                }
-              }
-
-              if (headerRowIndex === -1) {
-                resolve(null);
-                return;
-              }
-
-              const headers = jsonData[headerRowIndex] as string[];
-              const marketplaceColIndex = headers.findIndex(h => {
-                const normalized = String(h).toLowerCase();
-                return normalized.includes('marketplace') ||
-                       normalized.includes('web de amazon') ||
-                       normalized.includes('market');
-              });
-
-              if (marketplaceColIndex === -1) {
-                resolve(null);
-                return;
-              }
-
-              // İlk birkaç satırdan marketplace'i tespit et
-              for (let i = headerRowIndex + 1; i < Math.min(headerRowIndex + 10, jsonData.length); i++) {
-                const row = jsonData[i];
-                if (row && row[marketplaceColIndex]) {
-                  const detected = detectMarketplace(String(row[marketplaceColIndex]));
-                  if (detected) {
-                    resolve(detected);
-                    return;
-                  }
-                }
-              }
-
-              resolve(null);
-            } catch (err) {
-              resolve(null);
-            }
-          };
-          reader.readAsArrayBuffer(file);
-        });
+      for (const file of uploadedFiles) {
+        // Use extracted service for marketplace detection
+        const quickRead = await detectMarketplaceFromFile(file);
 
         if (!quickRead) {
           throw new Error(`${file.name}: Marketplace tespit edilemedi. Dosyanın Amazon transaction raporu olduğundan emin olun.`);
@@ -772,167 +462,13 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
 
   const exportToExcel = () => {
     if (!analytics || !config) return;
-
-    const workbook = XLSX.utils.book_new();
-
-    // 1. SUMMARY SHEET
-    const summaryData = [
-      ['Amazon Transaction Analyzer - Summary Report'],
-      ['Marketplace', config.name],
-      ['Currency', config.currency],
-      ['Report Date', new Date().toLocaleDateString()],
-      ['Date Range', dateRange.start && dateRange.end ? `${dateRange.start} to ${dateRange.end}` : 'All Time'],
-      ['Fulfillment Filter', selectedFulfillment === 'all' ? 'All' : selectedFulfillment],
-      [],
-      ['SALES SUMMARY'],
-      ['Total Orders', analytics.totalOrders],
-      ['Total Sales', analytics.totalSales],
-      ['FBA Orders', analytics.fbaOrders],
-      ['FBA Sales', analytics.fbaOrderSales],
-      ['FBM Orders', analytics.fbmOrders],
-      ['FBM Sales', analytics.fbmOrderSales],
-      [],
-      ['COSTS SUMMARY'],
-      ['Total Selling Fees', analytics.totalSellingFees],
-      ['Total FBA Fees', analytics.totalFbaFees],
-      ['Total FBA Cost', analytics.totalFBACost],
-      ['Total FBM Cost', analytics.totalFBMCost],
-      ['Advertising Cost', analytics.displayAdvertisingCost],
-      [],
-      ['REFUND SUMMARY'],
-      ['Total Refunds', analytics.totalRefunds],
-      ['Refund Rate (%)', analytics.refundRate],
-      ['Total Refund Amount', analytics.totalRefundAmount],
-      ['Recovered Refunds', analytics.recoveredRefunds],
-      ['Actual Refund Loss', analytics.actualRefundLoss],
-      [],
-      ['NET SUMMARY'],
-      ['Total Net', analytics.totalNet],
-      ...(config.vatIncludedInPrice ? [['Total VAT', analytics.totalVAT]] : [])
-    ];
-    const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
-    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
-
-    // 2. POSTAL ZONES SHEET
-    if (config.hasPostalZones && analytics.postalZones && Object.keys(analytics.postalZones).length > 0) {
-      const zonesData = [
-        ['Zone', 'Zone Name', 'Order Count', 'Sales', 'Percentage'],
-        ...Object.entries(analytics.postalZones)
-          .sort((a, b) => b[1].sales - a[1].sales)
-          .map(([zone, data]) => [
-            zone,
-            ZONE_NAMES[config.code][zone] || '-',
-            data.count,
-            data.sales,
-            ((data.count / analytics.totalOrders) * 100).toFixed(2) + '%'
-          ])
-      ];
-      const zonesSheet = XLSX.utils.aoa_to_sheet(zonesData);
-      XLSX.utils.book_append_sheet(workbook, zonesSheet, 'Postal Zones');
-    }
-
-    // 3. FBA COSTS DETAIL SHEET
-    if (selectedFulfillment !== 'FBM') {
-      const fbaCostsData = [
-        ['FBA COSTS BREAKDOWN'],
-        [],
-        ['ADJUSTMENTS'],
-        ['Description', 'Count', 'Total'],
-        ...(analytics.adjustmentGroups ? Object.entries(analytics.adjustmentGroups).map(([key, val]) => [key, val.count, val.total]) : []),
-        [],
-        ['INVENTORY FEES'],
-        ['Description', 'Count', 'Total'],
-        ...(analytics.inventoryGroups ? Object.entries(analytics.inventoryGroups).map(([key, val]) => [key, val.count, val.total]) : []),
-        [],
-        ['SERVICE FEES'],
-        ['Description', 'Count', 'Total'],
-        ...(analytics.serviceGroups ? Object.entries(analytics.serviceGroups).map(([key, val]) => [key, val.count, val.total]) : []),
-        [],
-        ['CHARGEBACKS'],
-        ['SKU', 'Count', 'Total'],
-        ...(analytics.chargebackGroups ? Object.entries(analytics.chargebackGroups).map(([key, val]) => [key, val.count, val.total]) : []),
-        [],
-        ['SUMMARY'],
-        ['Adjustment Total', analytics.adjustmentTotal],
-        ['Inventory Total', analytics.inventoryTotal],
-        ['Service Total', analytics.serviceTotal],
-        ['Chargeback Total', analytics.chargebackTotal],
-        ['FBA Transaction Fees', analytics.fbaTransactionFees],
-        ['Fee Adjustments', analytics.feeAdjustments],
-        ['SAFE-T Reimbursements', analytics.safetReimbursements],
-        ...(config.hasLiquidations ? [['Liquidations Total', analytics.liquidationsTotal]] : []),
-        ['TOTAL FBA COST', analytics.totalFBACost]
-      ];
-      const fbaCostsSheet = XLSX.utils.aoa_to_sheet(fbaCostsData);
-      XLSX.utils.book_append_sheet(workbook, fbaCostsSheet, 'FBA Costs');
-    }
-
-    // 4. TOP 100 BEST SELLING SKUs
-    const orders = filteredData.filter(d => d.categoryType === 'Order');
-    const refunds = filteredData.filter(d => d.categoryType === 'Refund');
-
-    // Calculate sales by SKU
-    const skuSales: Record<string, { sku: string; totalSales: number; orderCount: number; totalQuantity: number }> = {};
-    orders.forEach(order => {
-      if (!order.sku) return;
-      if (!skuSales[order.sku]) {
-        skuSales[order.sku] = { sku: order.sku, totalSales: 0, orderCount: 0, totalQuantity: 0 };
-      }
-      skuSales[order.sku].totalSales += order.productSales;
-      skuSales[order.sku].orderCount += 1;
-      skuSales[order.sku].totalQuantity += order.quantity;
+    exportTransactionsToExcel({
+      analytics,
+      config,
+      dateRange,
+      selectedFulfillment,
+      filteredData,
     });
-
-    // Sort by total sales and take top 100
-    const top100BestSellers = Object.values(skuSales)
-      .sort((a, b) => b.totalSales - a.totalSales)
-      .slice(0, 100)
-      .map(item => ({
-        'SKU': item.sku,
-        'Total Sales': item.totalSales,
-        'Order Count': item.orderCount,
-        'Total Quantity': item.totalQuantity,
-        'Avg Order Value': item.orderCount > 0 ? item.totalSales / item.orderCount : 0
-      }));
-
-    if (top100BestSellers.length > 0) {
-      const bestSellersSheet = XLSX.utils.json_to_sheet(top100BestSellers);
-      XLSX.utils.book_append_sheet(workbook, bestSellersSheet, 'Top 100 Best Sellers');
-    }
-
-    // 5. TOP 100 MOST REFUNDED SKUs
-    // Calculate refunds by SKU
-    const skuRefunds: Record<string, { sku: string; totalRefundAmount: number; refundCount: number; totalQuantity: number }> = {};
-    refunds.forEach(refund => {
-      if (!refund.sku) return;
-      if (!skuRefunds[refund.sku]) {
-        skuRefunds[refund.sku] = { sku: refund.sku, totalRefundAmount: 0, refundCount: 0, totalQuantity: 0 };
-      }
-      skuRefunds[refund.sku].totalRefundAmount += Math.abs(refund.total);
-      skuRefunds[refund.sku].refundCount += 1;
-      skuRefunds[refund.sku].totalQuantity += Math.abs(refund.quantity);
-    });
-
-    // Sort by refund count and take top 100
-    const top100MostRefunded = Object.values(skuRefunds)
-      .sort((a, b) => b.refundCount - a.refundCount)
-      .slice(0, 100)
-      .map(item => ({
-        'SKU': item.sku,
-        'Refund Count': item.refundCount,
-        'Total Refund Amount': item.totalRefundAmount,
-        'Total Quantity': item.totalQuantity,
-        'Avg Refund Value': item.refundCount > 0 ? item.totalRefundAmount / item.refundCount : 0
-      }));
-
-    if (top100MostRefunded.length > 0) {
-      const mostRefundedSheet = XLSX.utils.json_to_sheet(top100MostRefunded);
-      XLSX.utils.book_append_sheet(workbook, mostRefundedSheet, 'Top 100 Most Refunded');
-    }
-
-    // Download
-    const fileName = `Amazon_Analysis_${config.code}_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
   };
 
   // NOTE: filteredData does NOT apply fulfillment filter
