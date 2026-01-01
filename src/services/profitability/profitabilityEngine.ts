@@ -163,8 +163,13 @@ export const extractPhase2NameData = (
 // ============================================
 
 /**
- * Extract cost data from enriched transaction data (from Google Sheets)
- * This is the PRIMARY method - cost/size comes from the same sheet as other product info
+ * Extract cost data from enriched transaction data (from PriceLab API)
+ * This is the PRIMARY method - cost/size comes from PriceLab product mapping
+ *
+ * IMPORTANT: We prioritize transactions that HAVE cost/size data over those that don't.
+ * This is because the same SKU may appear in transactions where:
+ * - Some have marketplace-specific enrichment (with cost/size)
+ * - Some only have fallback enrichment (category only, no cost/size)
  */
 export const extractCostDataFromTransactions = (
   transactions: TransactionData[]
@@ -172,20 +177,60 @@ export const extractCostDataFromTransactions = (
   const skuMap = new Map<string, ProductCostData>();
 
   transactions.forEach(t => {
-    if (!t.sku || skuMap.has(t.sku)) return;
+    if (!t.sku) return;
 
-    skuMap.set(t.sku, {
-      sku: t.sku,
-      asin: t.asin,
-      name: t.name || t.sku,
-      parent: t.parent,
-      category: t.productCategory,
-      cost: t.productCost ?? null,
-      size: t.productSize ?? null,
-    });
+    const existing = skuMap.get(t.sku);
+    const hasCost = t.productCost !== null && t.productCost !== undefined;
+    const hasSize = t.productSize !== null && t.productSize !== undefined;
+    const hasCustomShipping = t.productCustomShipping !== null && t.productCustomShipping !== undefined;
+    const hasFbmSource = t.productFbmSource !== null && t.productFbmSource !== undefined;
+
+    // If we don't have this SKU yet, add it
+    if (!existing) {
+      skuMap.set(t.sku, {
+        sku: t.sku,
+        asin: t.asin,
+        name: t.name || t.sku,
+        parent: t.parent,
+        category: t.productCategory,
+        cost: t.productCost ?? null,
+        size: t.productSize ?? null,
+        customShipping: t.productCustomShipping ?? null,
+        fbmSource: (t.productFbmSource as 'TR' | 'US' | 'BOTH') || null,
+      });
+      return;
+    }
+
+    // If existing entry is missing data, try to fill from this transaction
+    const needsCost = existing.cost === null && hasCost;
+    const needsSize = existing.size === null && hasSize;
+    const needsCustomShipping = existing.customShipping === null && hasCustomShipping;
+    const needsFbmSource = !existing.fbmSource && hasFbmSource;
+
+    if (needsCost || needsSize || needsCustomShipping || needsFbmSource) {
+      skuMap.set(t.sku, {
+        ...existing,
+        cost: needsCost ? t.productCost! : existing.cost,
+        size: needsSize ? t.productSize! : existing.size,
+        customShipping: needsCustomShipping ? t.productCustomShipping! : existing.customShipping,
+        fbmSource: needsFbmSource ? (t.productFbmSource as 'TR' | 'US' | 'BOTH') : existing.fbmSource,
+        // Also update other fields if they were empty
+        asin: existing.asin || t.asin,
+        name: existing.name || t.name || t.sku,
+        parent: existing.parent || t.parent,
+        category: existing.category || t.productCategory,
+      });
+    }
   });
 
-  return Array.from(skuMap.values());
+  const result = Array.from(skuMap.values());
+
+  // Debug logging
+  const withCost = result.filter(r => r.cost !== null).length;
+  const withSize = result.filter(r => r.size !== null).length;
+  console.log(`[extractCostDataFromTransactions] Extracted ${result.length} SKUs: ${withCost} with cost, ${withSize} with size`);
+
+  return result;
 };
 
 /**

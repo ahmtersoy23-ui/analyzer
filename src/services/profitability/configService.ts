@@ -1,4 +1,5 @@
 // Phase 3: Config Service - Kargo Cetveli ve Ülke Ayarları Yönetimi
+// Uses PriceLab API for data persistence (no localStorage)
 
 import {
   ShippingRateTable,
@@ -10,15 +11,13 @@ import {
   FBMShippingMode,
 } from '../../types/profitability';
 import { MarketplaceCode } from '../../types/transaction';
-
-// ============================================
-// STORAGE KEYS
-// ============================================
-
-const STORAGE_KEYS = {
-  SHIPPING_RATES: 'amazon-analyzer-shipping-rates',
-  COUNTRY_CONFIGS: 'amazon-analyzer-country-configs',
-};
+import {
+  fetchShippingRates as apiFetchShippingRates,
+  saveShippingRatesToAPI,
+  fetchCountryConfigs as apiFetchCountryConfigs,
+  saveCountryConfigToAPI,
+  saveAllCountryConfigsToAPI,
+} from '../api/configApi';
 
 // ============================================
 // CURRENCY MAPPING
@@ -58,25 +57,35 @@ export const createEmptyShippingRates = (): ShippingRateTable => ({
   },
 });
 
-// Kargo cetvelini localStorage'dan yükle
+// In-memory cache for shipping rates (loaded from API once)
+let shippingRatesCache: ShippingRateTable | null = null;
+
+// Kargo cetvelini API'den yükle (sync wrapper - uses cache)
 export const loadShippingRates = (): ShippingRateTable | null => {
+  return shippingRatesCache;
+};
+
+// Kargo cetvelini API'den async yükle
+export const loadShippingRatesAsync = async (): Promise<ShippingRateTable> => {
   try {
-    const stored = localStorage.getItem(STORAGE_KEYS.SHIPPING_RATES);
-    if (stored) {
-      return JSON.parse(stored) as ShippingRateTable;
-    }
-    return null;
+    const rates = await apiFetchShippingRates();
+    shippingRatesCache = rates;
+    console.log('✅ Shipping rates loaded from API');
+    return rates;
   } catch (error) {
-    console.error('Error loading shipping rates:', error);
-    return null;
+    console.error('Error loading shipping rates from API:', error);
+    // Return empty rates on error
+    return createEmptyShippingRates();
   }
 };
 
-// Kargo cetvelini localStorage'a kaydet
-export const saveShippingRates = (rates: ShippingRateTable): void => {
+// Kargo cetvelini API'ye kaydet
+export const saveShippingRates = async (rates: ShippingRateTable): Promise<void> => {
   try {
     rates.lastUpdated = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEYS.SHIPPING_RATES, JSON.stringify(rates));
+    await saveShippingRatesToAPI(rates);
+    shippingRatesCache = rates;
+    console.log('💾 Shipping rates saved to API');
   } catch (error) {
     console.error('Error saving shipping rates:', error);
     throw new Error('Kargo cetveli kaydedilemedi');
@@ -176,9 +185,19 @@ export const parseShippingRatesFromExcel = (
   return rates;
 };
 
-// Desi için kargo ücreti bul (üst bareme yuvarla)
-// Returns { rate, found, currency } - found=false means no rates defined at all
-// If desi exceeds the highest rate in table, uses the highest rate (extrapolation)
+// Desi için kargo ücreti bul (üst bareme yuvarla + boş değer atlama)
+// Returns { rate, found, currency } - found=false means no valid rates found
+//
+// Interpolation Logic:
+// 1. Skip entries with rate = 0 or missing (boş değerler atlanır)
+// 2. Find the first VALID rate where desi <= rateEntry.desi (en yakın üst desi)
+// 3. If desi is below all defined rates but some rates exist with 0 values,
+//    find the first non-zero rate and use it
+// 4. If desi exceeds all defined rates, rate not found
+//
+// Example:
+//   0.5 desi = 0 (boş), 1.0 desi = 0 (boş), 1.5 desi = 50
+//   Query 0.8 desi → Returns 50 (uses 1.5 as nearest upper with valid rate)
 export const getShippingRate = (
   rates: ShippingRateTable,
   route: ShippingRoute,
@@ -190,14 +209,32 @@ export const getShippingRate = (
 
   if (routeRates.length === 0) return { rate: 0, found: false, currency };
 
-  // Üst bareme yuvarla: 1.33 desi için 1.5 satırını bul
+  // Rates are sorted by desi ascending
+  // Find the first rate where desi <= rateEntry.desi AND rate > 0 (skip empty values)
   for (const rateEntry of routeRates) {
-    if (desi <= rateEntry.desi) {
+    if (desi <= rateEntry.desi && rateEntry.rate > 0) {
       return { rate: rateEntry.rate, found: true, currency };
     }
   }
 
-  // En yüksek desi'den büyükse, rate bulunamadı - kullanıcı override girmeli veya cetveli genişletmeli
+  // If we're here, either:
+  // 1. Desi is higher than all defined rates, OR
+  // 2. All rates at or above our desi are 0 (empty)
+  //
+  // For case 2: Find the first non-zero rate (nearest upper with valid value)
+  const firstValidRate = routeRates.find(r => r.rate > 0);
+  if (firstValidRate && desi <= firstValidRate.desi) {
+    // This case is already handled above, but just in case
+    return { rate: firstValidRate.rate, found: true, currency };
+  }
+
+  // For desi below the first valid rate, use that rate
+  // Example: rates start at 1.5=50, query is 0.5 → use 50
+  if (firstValidRate && desi < firstValidRate.desi) {
+    return { rate: firstValidRate.rate, found: true, currency };
+  }
+
+  // Desi is higher than all defined rates or no valid rates exist
   return { rate: 0, found: false, currency };
 };
 
@@ -268,6 +305,9 @@ export const getShippingRouteForMarketplace = (
 // COUNTRY CONFIGS
 // ============================================
 
+// In-memory cache for country configs
+let countryConfigsCache: AllCountryConfigs | null = null;
+
 // Default ülke config'lerini oluştur
 export const createDefaultCountryConfigs = (): AllCountryConfigs => {
   const marketplaces: MarketplaceCode[] = ['US', 'UK', 'DE', 'FR', 'IT', 'ES', 'CA', 'AU', 'AE', 'SA'];
@@ -292,7 +332,7 @@ export const createDefaultCountryConfigs = (): AllCountryConfigs => {
             customsDutyPercent: 0,  // Varsayılan 0
             ddpFee: 0,
           },
-          fromLocal: { warehousePercent: 0 },  // Varsayılan 0
+          fromLocal: { shippingPerDesi: 0, warehousePercent: 0 },  // Varsayılan 0
         },
         lastUpdated: new Date().toISOString(),
       };
@@ -305,42 +345,37 @@ export const createDefaultCountryConfigs = (): AllCountryConfigs => {
   };
 };
 
-// Ülke config'lerini localStorage'dan yükle
+// Ülke config'lerini sync yükle (uses cache)
 export const loadCountryConfigs = (): AllCountryConfigs => {
+  if (countryConfigsCache) {
+    return countryConfigsCache;
+  }
+  return createDefaultCountryConfigs();
+};
+
+// Ülke config'lerini API'den async yükle
+export const loadCountryConfigsAsync = async (): Promise<AllCountryConfigs> => {
   try {
-    const stored = localStorage.getItem(STORAGE_KEYS.COUNTRY_CONFIGS);
-    if (stored) {
-      const parsed = JSON.parse(stored) as AllCountryConfigs;
-      console.log('✅ Country configs loaded from localStorage:', {
-        lastUpdated: parsed.lastUpdated,
-        countries: Object.keys(parsed.configs),
-        usConfig: parsed.configs.US ? {
-          fbaShipping: parsed.configs.US.fba.shippingPerDesi,
-          fbaWarehouse: parsed.configs.US.fba.warehousePercent,
-        } : null,
-      });
-      return parsed;
-    }
-    console.log('ℹ️ No saved country configs found, using defaults');
-    return createDefaultCountryConfigs();
+    const configs = await apiFetchCountryConfigs();
+    countryConfigsCache = configs;
+    console.log('✅ Country configs loaded from API:', {
+      lastUpdated: configs.lastUpdated,
+      countries: Object.keys(configs.configs),
+    });
+    return configs;
   } catch (error) {
-    console.error('Error loading country configs:', error);
+    console.error('Error loading country configs from API:', error);
     return createDefaultCountryConfigs();
   }
 };
 
-// Ülke config'lerini localStorage'a kaydet
-export const saveCountryConfigs = (configs: AllCountryConfigs): void => {
+// Ülke config'lerini API'ye kaydet
+export const saveCountryConfigs = async (configs: AllCountryConfigs): Promise<void> => {
   try {
     configs.lastUpdated = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEYS.COUNTRY_CONFIGS, JSON.stringify(configs));
-    console.log('💾 Country configs saved to localStorage:', {
-      lastUpdated: configs.lastUpdated,
-      usConfig: configs.configs.US ? {
-        fbaShipping: configs.configs.US.fba.shippingPerDesi,
-        fbaWarehouse: configs.configs.US.fba.warehousePercent,
-      } : null,
-    });
+    await saveAllCountryConfigsToAPI(configs);
+    countryConfigsCache = configs;
+    console.log('💾 Country configs saved to API');
   } catch (error) {
     console.error('Error saving country configs:', error);
     throw new Error('Ülke ayarları kaydedilemedi');
@@ -348,30 +383,58 @@ export const saveCountryConfigs = (configs: AllCountryConfigs): void => {
 };
 
 // Tek bir ülke config'ini güncelle
-export const updateCountryConfig = (
+export const updateCountryConfig = async (
   allConfigs: AllCountryConfigs,
   marketplace: MarketplaceCode,
   updates: Partial<CountryProfitConfig>
-): AllCountryConfigs => {
+): Promise<AllCountryConfigs> => {
+  const updatedConfig = {
+    ...allConfigs.configs[marketplace],
+    ...updates,
+    lastUpdated: new Date().toISOString(),
+  };
+
   const updatedConfigs = {
     ...allConfigs,
     configs: {
       ...allConfigs.configs,
-      [marketplace]: {
-        ...allConfigs.configs[marketplace],
-        ...updates,
-        lastUpdated: new Date().toISOString(),
-      },
+      [marketplace]: updatedConfig,
     },
     lastUpdated: new Date().toISOString(),
   };
 
-  saveCountryConfigs(updatedConfigs);
+  // Save single config to API
+  await saveCountryConfigToAPI(updatedConfig);
+  countryConfigsCache = updatedConfigs;
+
   return updatedConfigs;
 };
 
 // ============================================
-// EXPORT/IMPORT
+// INITIALIZATION
+// ============================================
+
+// Load all configs from API on startup
+export const initializeConfigs = async (): Promise<{
+  shippingRates: ShippingRateTable;
+  countryConfigs: AllCountryConfigs;
+}> => {
+  const [shippingRates, countryConfigs] = await Promise.all([
+    loadShippingRatesAsync(),
+    loadCountryConfigsAsync(),
+  ]);
+
+  return { shippingRates, countryConfigs };
+};
+
+// Clear caches (useful for logout/refresh)
+export const clearConfigCaches = (): void => {
+  shippingRatesCache = null;
+  countryConfigsCache = null;
+};
+
+// ============================================
+// EXPORT/IMPORT (JSON files)
 // ============================================
 
 // Tüm config'leri JSON olarak export et
@@ -380,22 +443,22 @@ export const exportAllConfigs = (): string => {
     shippingRates: loadShippingRates(),
     countryConfigs: loadCountryConfigs(),
     exportedAt: new Date().toISOString(),
-    version: '1.0',
+    version: '2.0',
   };
   return JSON.stringify(data, null, 2);
 };
 
 // JSON'dan config'leri import et
-export const importAllConfigs = (jsonString: string): void => {
+export const importAllConfigs = async (jsonString: string): Promise<void> => {
   try {
     const data = JSON.parse(jsonString);
 
     if (data.shippingRates) {
-      saveShippingRates(data.shippingRates);
+      await saveShippingRates(data.shippingRates);
     }
 
     if (data.countryConfigs) {
-      saveCountryConfigs(data.countryConfigs);
+      await saveCountryConfigs(data.countryConfigs);
     }
   } catch (error) {
     console.error('Error importing configs:', error);
@@ -403,8 +466,7 @@ export const importAllConfigs = (jsonString: string): void => {
   }
 };
 
-// Tüm config'leri sıfırla
+// Tüm config'leri sıfırla (sadece cache'i temizle, API'de veri kalır)
 export const resetAllConfigs = (): void => {
-  localStorage.removeItem(STORAGE_KEYS.SHIPPING_RATES);
-  localStorage.removeItem(STORAGE_KEYS.COUNTRY_CONFIGS);
+  clearConfigCaches();
 };

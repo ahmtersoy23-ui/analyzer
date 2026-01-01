@@ -1,10 +1,11 @@
 /**
- * Country Settings Tab - Ülke bazlı manuel ayarlar
+ * Country Settings Tab - Ülke bazlı ayarlar görüntüleme (READ-ONLY)
+ * Düzenleme için PriceLab kullanılmalı
  */
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, RefreshCw, Check, AlertTriangle } from 'lucide-react';
-import { AllCountryConfigs, CountryProfitConfig, GSTConfig, GSTApplyTo } from '../../types/profitability';
+import { RefreshCw, Check, AlertTriangle, ExternalLink } from 'lucide-react';
+import { AllCountryConfigs, GSTApplyTo } from '../../types/profitability';
 import { MarketplaceCode } from '../../types/transaction';
 import {
   fetchLiveRates,
@@ -16,9 +17,10 @@ import {
   CURRENCY_NAMES,
 } from '../../utils/currencyExchange';
 
+const PRICELAB_URL = 'http://78.47.117.36:3000'; // PriceLab frontend URL
+
 interface CountrySettingsTabProps {
   countryConfigs: AllCountryConfigs;
-  onUpdate: (configs: AllCountryConfigs) => void;
   availableCategories: string[];  // Transaction'lardan gelen mevcut kategoriler
 }
 
@@ -40,7 +42,6 @@ type SettingsView = 'country' | 'exchangeRates';
 
 const CountrySettingsTab: React.FC<CountrySettingsTabProps> = ({
   countryConfigs,
-  onUpdate,
   availableCategories,
 }) => {
   const [selectedCountry, setSelectedCountry] = useState<MarketplaceCode>('US');
@@ -80,71 +81,6 @@ const CountrySettingsTab: React.FC<CountrySettingsTabProps> = ({
 
   const currentConfig = countryConfigs.configs[selectedCountry];
   const countryInfo = MARKETPLACE_INFO[selectedCountry];
-
-  const updateConfig = (updates: Partial<CountryProfitConfig>) => {
-    const newConfigs = {
-      ...countryConfigs,
-      configs: {
-        ...countryConfigs.configs,
-        [selectedCountry]: {
-          ...currentConfig,
-          ...updates,
-          lastUpdated: new Date().toISOString(),
-        },
-      },
-      lastUpdated: new Date().toISOString(),
-    };
-    onUpdate(newConfigs);
-  };
-
-  const handleFBAChange = (field: string, value: number) => {
-    updateConfig({
-      fba: {
-        ...currentConfig.fba,
-        [field]: value,
-      },
-    });
-  };
-
-  const handleFBMFromTRChange = (field: string, value: number) => {
-    updateConfig({
-      fbm: {
-        ...currentConfig.fbm,
-        fromTR: {
-          ...currentConfig.fbm.fromTR,
-          [field]: value,
-        },
-      },
-    });
-  };
-
-  const handleFBMFromLocalChange = (field: string, value: number) => {
-    updateConfig({
-      fbm: {
-        ...currentConfig.fbm,
-        fromLocal: {
-          warehousePercent: currentConfig.fbm.fromLocal?.warehousePercent || 0,
-          ...currentConfig.fbm.fromLocal,
-          [field]: value,
-        },
-      },
-    });
-  };
-
-  const handleGSTChange = (updates: Partial<GSTConfig>) => {
-    // Ülkeye özel default applyTo değerini al
-    const defaultApplyTo = gstLabels[selectedCountry]?.defaultApplyTo ?? 'FBA';
-    updateConfig({
-      gst: {
-        enabled: currentConfig.gst?.enabled ?? false,
-        ratePercent: currentConfig.gst?.ratePercent ?? 0,
-        includedInPrice: currentConfig.gst?.includedInPrice ?? true,
-        applyTo: currentConfig.gst?.applyTo ?? defaultApplyTo,
-        ...currentConfig.gst,
-        ...updates,
-      },
-    });
-  };
 
   // GST/VAT uygulanabilir ülkeler (AU, AE, SA)
   const showGSTSettings = selectedCountry === 'AU' || selectedCountry === 'AE' || selectedCountry === 'SA';
@@ -353,365 +289,130 @@ const CountrySettingsTab: React.FC<CountrySettingsTabProps> = ({
             </div>
           </div>
 
-          {/* Settings for selected country */}
+          {/* PriceLab redirect banner */}
+          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-indigo-600">
+                  Bu ayarları görüntülüyorsunuz. Düzenlemeler için PriceLab kullanın.
+                </p>
+              </div>
+              <a
+                href={`${PRICELAB_URL}/settings`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                PriceLab'da Düzenle
+              </a>
+            </div>
+          </div>
+
+          {/* Settings for selected country - READ ONLY */}
           <div className="bg-white border border-slate-200 rounded-xl p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h4 className="text-xl font-bold text-slate-800">
-            {countryInfo.flag} {countryInfo.label} ({countryInfo.currency})
-          </h4>
-          <span className="text-xs text-slate-500">
-            Son güncelleme: {new Date(currentConfig.lastUpdated).toLocaleString('tr-TR')}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* FBA Settings */}
-          <div className="bg-blue-50 rounded-xl p-5">
-            <h5 className="font-semibold text-blue-800 mb-4">FBA Ayarları</h5>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-blue-700 mb-1">
-                  Depoya Gönderim ($/desi)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={currentConfig.fba.shippingPerDesi}
-                  onChange={(e) =>
-                    handleFBAChange('shippingPerDesi', parseFloat(e.target.value) || 0)
-                  }
-                  className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <p className="text-xs text-blue-600 mt-1">
-                  Gemi ile depoya gönderim bedeli (desi başına)
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-blue-700 mb-1">
-                  Depo-İdare (%)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={currentConfig.fba.warehousePercent}
-                  onChange={(e) =>
-                    handleFBAChange('warehousePercent', parseFloat(e.target.value) || 0)
-                  }
-                  className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <p className="text-xs text-blue-600 mt-1">
-                  Satış fiyatının yüzdesi olarak depo/idare gideri
-                </p>
-              </div>
+            <div className="flex items-center justify-between mb-6">
+              <h4 className="text-xl font-bold text-slate-800">
+                {countryInfo.flag} {countryInfo.label} ({countryInfo.currency})
+              </h4>
+              <span className="text-xs text-slate-500">
+                Son güncelleme: {new Date(currentConfig.lastUpdated).toLocaleString('tr-TR')}
+              </span>
             </div>
-          </div>
 
-          {/* FBM Settings */}
-          <div className="bg-green-50 rounded-xl p-5">
-            <h5 className="font-semibold text-green-800 mb-4">FBM Ayarları</h5>
-
-            {/* TR settings (always shown) */}
-            <div className="space-y-4">
-              <h6 className="text-sm font-medium text-green-700 border-b border-green-200 pb-1">
-                TR'den Gönderim
-              </h6>
-
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  Varsayılan Gümrük Vergisi (%)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={currentConfig.fbm.fromTR.customsDutyPercent}
-                  onChange={(e) =>
-                    handleFBMFromTRChange('customsDutyPercent', parseFloat(e.target.value) || 0)
-                  }
-                  className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                />
-                <p className="text-xs text-green-600 mt-1">
-                  Kategori tanımlı olmayan ürünler için
-                </p>
-              </div>
-
-              {/* Category-based customs duties */}
-              <div className="mt-3 pt-3 border-t border-green-200">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-green-700">
-                    Kategori Bazlı Gümrük
-                  </label>
-                  <button
-                    onClick={() => {
-                      const categoryDuties = currentConfig.fbm.fromTR.categoryDuties || [];
-                      updateConfig({
-                        fbm: {
-                          ...currentConfig.fbm,
-                          fromTR: {
-                            ...currentConfig.fbm.fromTR,
-                            categoryDuties: [...categoryDuties, { category: '', dutyPercent: 8.5 }],
-                          },
-                        },
-                      });
-                    }}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                  >
-                    <Plus className="w-3 h-3" /> Ekle
-                  </button>
-                </div>
-
-                {(currentConfig.fbm.fromTR.categoryDuties || []).length > 0 ? (
-                  <div className="space-y-2">
-                    {(currentConfig.fbm.fromTR.categoryDuties || []).map((cd, idx) => {
-                      // Zaten seçilmiş kategorileri filtrele (mevcut hariç)
-                      const usedCategories = (currentConfig.fbm.fromTR.categoryDuties || [])
-                        .filter((_, i) => i !== idx)
-                        .map(d => d.category);
-                      const availableForSelect = availableCategories.filter(
-                        cat => !usedCategories.includes(cat)
-                      );
-
-                      return (
-                        <div key={idx} className="flex items-center gap-2">
-                          <select
-                            value={cd.category}
-                            onChange={(e) => {
-                              const categoryDuties = [...(currentConfig.fbm.fromTR.categoryDuties || [])];
-                              categoryDuties[idx] = { ...categoryDuties[idx], category: e.target.value };
-                              updateConfig({
-                                fbm: {
-                                  ...currentConfig.fbm,
-                                  fromTR: {
-                                    ...currentConfig.fbm.fromTR,
-                                    categoryDuties,
-                                  },
-                                },
-                              });
-                            }}
-                            className="flex-1 px-2 py-1 text-sm border border-green-200 rounded focus:ring-1 focus:ring-green-500 bg-white"
-                          >
-                            <option value="">Kategori seçin...</option>
-                            {availableForSelect.map(cat => (
-                              <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                            {/* Eğer mevcut değer listede yoksa (eski veri) onu da göster */}
-                            {cd.category && !availableCategories.includes(cd.category) && (
-                              <option value={cd.category}>{cd.category} (eski)</option>
-                            )}
-                            {/* Mevcut seçili değeri her zaman göster */}
-                            {cd.category && availableCategories.includes(cd.category) && usedCategories.includes(cd.category) === false && (
-                              <option value={cd.category}>{cd.category}</option>
-                            )}
-                          </select>
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={cd.dutyPercent}
-                            onChange={(e) => {
-                              const categoryDuties = [...(currentConfig.fbm.fromTR.categoryDuties || [])];
-                              categoryDuties[idx] = { ...categoryDuties[idx], dutyPercent: parseFloat(e.target.value) || 0 };
-                              updateConfig({
-                                fbm: {
-                                  ...currentConfig.fbm,
-                                  fromTR: {
-                                    ...currentConfig.fbm.fromTR,
-                                    categoryDuties,
-                                  },
-                                },
-                              });
-                            }}
-                            className="w-16 px-2 py-1 text-sm border border-green-200 rounded text-right focus:ring-1 focus:ring-green-500"
-                          />
-                          <span className="text-xs text-green-600">%</span>
-                          <button
-                            onClick={() => {
-                              const categoryDuties = (currentConfig.fbm.fromTR.categoryDuties || []).filter((_, i) => i !== idx);
-                              updateConfig({
-                                fbm: {
-                                  ...currentConfig.fbm,
-                                  fromTR: {
-                                    ...currentConfig.fbm.fromTR,
-                                    categoryDuties,
-                                  },
-                                },
-                              });
-                            }}
-                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* FBA Settings - READ ONLY */}
+              <div className="bg-blue-50 rounded-xl p-5">
+                <h5 className="font-semibold text-blue-800 mb-4">FBA Ayarları</h5>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2 border-b border-blue-100">
+                    <span className="text-sm text-blue-700">Depoya Gönderim</span>
+                    <span className="font-semibold text-blue-900">${currentConfig.fba.shippingPerDesi}/desi</span>
                   </div>
-                ) : (
-                  <p className="text-xs text-green-500 italic">
-                    Tüm ürünler varsayılan oranı kullanır
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  DDP Ücreti ($)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={currentConfig.fbm.fromTR.ddpFee}
-                  onChange={(e) =>
-                    handleFBMFromTRChange('ddpFee', parseFloat(e.target.value) || 0)
-                  }
-                  className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                />
-              </div>
-            </div>
-
-            {/* Local warehouse settings (for all countries) */}
-            <div className="space-y-4 mt-4 pt-4 border-t border-green-200">
-              <h6 className="text-sm font-medium text-green-700 border-b border-green-200 pb-1">
-                Yerel Depo Gönderimi
-              </h6>
-
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-1">
-                  Depo Maliyeti (%)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={currentConfig.fbm.fromLocal?.warehousePercent || 0}
-                  onChange={(e) =>
-                    handleFBMFromLocalChange('warehousePercent', parseFloat(e.target.value) || 0)
-                  }
-                  className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                />
-                <p className="text-xs text-green-600 mt-1">
-                  Yerel depodan gönderimde depo/işçilik maliyeti (varsayılan: 0)
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* GST/VAT Settings (for AU, AE, SA) */}
-        {showGSTSettings && (
-          <div className="mt-6 bg-orange-50 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h5 className="font-semibold text-orange-800">{currentGstLabel.name} Ayarları</h5>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={currentConfig.gst?.enabled ?? false}
-                  onChange={(e) => handleGSTChange({ enabled: e.target.checked })}
-                  className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
-                />
-                <span className="text-sm font-medium text-orange-700">{currentGstLabel.name} Hesapla</span>
-              </label>
-            </div>
-
-            {currentConfig.gst?.enabled && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-orange-700 mb-1">
-                    {currentGstLabel.name} Oranı (%)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={currentConfig.gst?.ratePercent ?? currentGstLabel.defaultRate}
-                    onChange={(e) =>
-                      handleGSTChange({ ratePercent: parseFloat(e.target.value) || 0 })
-                    }
-                    className="w-full px-3 py-2 border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                  />
-                  <p className="text-xs text-orange-600 mt-1">
-                    {currentGstLabel.description}
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-orange-700 mb-1">
-                    Uygulanacak Satış Türü
-                  </label>
-                  <div className="flex gap-2">
-                    {(['FBA', 'FBM', 'BOTH'] as GSTApplyTo[]).map((option) => (
-                      <button
-                        key={option}
-                        onClick={() => handleGSTChange({ applyTo: option })}
-                        className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
-                          (currentConfig.gst?.applyTo ?? currentGstLabel.defaultApplyTo) === option
-                            ? 'bg-orange-600 text-white'
-                            : 'bg-white border border-orange-200 text-orange-700 hover:bg-orange-50'
-                        }`}
-                      >
-                        {option === 'BOTH' ? 'Her İkisi' : option}
-                      </button>
-                    ))}
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm text-blue-700">Depo-İdare</span>
+                    <span className="font-semibold text-blue-900">%{currentConfig.fba.warehousePercent}</span>
                   </div>
-                  <p className="text-xs text-orange-600 mt-1">
-                    {currentGstLabel.name} hangi satış türlerine uygulanacak
-                  </p>
                 </div>
+              </div>
 
-                <div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={currentConfig.gst?.includedInPrice ?? true}
-                      onChange={(e) => handleGSTChange({ includedInPrice: e.target.checked })}
-                      className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
-                    />
-                    <span className="text-sm text-orange-700">{currentGstLabel.name} fiyata dahil</span>
-                  </label>
-                  <p className="text-xs text-orange-600 mt-1 ml-6">
-                    İşaretli: Fiyat {currentGstLabel.name} dahil (örn: fiyattan {currentGstLabel.name} çıkarılır)
-                  </p>
+              {/* FBM Settings - READ ONLY */}
+              <div className="bg-green-50 rounded-xl p-5">
+                <h5 className="font-semibold text-green-800 mb-4">FBM Ayarları (TR'den)</h5>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2 border-b border-green-100">
+                    <span className="text-sm text-green-700">Gümrük Vergisi</span>
+                    <span className="font-semibold text-green-900">%{currentConfig.fbm.fromTR.customsDutyPercent}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm text-green-700">DDP Ücreti</span>
+                    <span className="font-semibold text-green-900">${currentConfig.fbm.fromTR.ddpFee}</span>
+                  </div>
+                  {(currentConfig.fbm.fromTR.categoryDuties || []).length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-green-200">
+                      <span className="text-xs text-green-600 font-medium">Kategori Bazlı Gümrük:</span>
+                      <div className="mt-2 space-y-1">
+                        {(currentConfig.fbm.fromTR.categoryDuties || []).map((cd, idx) => (
+                          <div key={idx} className="flex justify-between text-xs bg-green-100 rounded px-2 py-1">
+                            <span className="text-green-700">{cd.category}</span>
+                            <span className="font-medium text-green-800">%{cd.dutyPercent}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
+              </div>
+            </div>
 
-                <div className="bg-orange-100 rounded-lg p-3 text-xs text-orange-800">
-                  <strong>Not:</strong> {currentGstLabel.note}
+            {/* FBM-US Settings - Only for US marketplace */}
+            {selectedCountry === 'US' && (
+              <div className="mt-6 bg-purple-50 rounded-xl p-5">
+                <h5 className="font-semibold text-purple-800 mb-4">FBM Ayarları (US Depodan)</h5>
+                <p className="text-xs text-purple-600 mb-4">
+                  US deposundan FBM gönderimlerinde FBA ile aynı depoya gönderim ve depo yönetim maliyeti uygulanır.
+                  Ancak FBA Fee ve FBA Cost uygulanmaz, bunun yerine US içi kargo (US-US) bedeli eklenir. Gümrük vergisi ve DDP yoktur.
+                </p>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-purple-100 rounded-lg p-3">
+                    <span className="text-xs text-purple-600">Depoya Gönderim</span>
+                    <p className="font-bold text-purple-900 text-lg">${currentConfig.fba.shippingPerDesi}/desi</p>
+                    <span className="text-[10px] text-purple-500">FBA ile aynı</span>
+                  </div>
+                  <div className="bg-purple-100 rounded-lg p-3">
+                    <span className="text-xs text-purple-600">Depo Yönetim</span>
+                    <p className="font-bold text-purple-900 text-lg">%{currentConfig.fba.warehousePercent}</p>
+                    <span className="text-[10px] text-purple-500">FBA ile aynı</span>
+                  </div>
+                  <div className="bg-purple-100 rounded-lg p-3">
+                    <span className="text-xs text-purple-600">US İçi Kargo</span>
+                    <p className="font-bold text-purple-900 text-lg">US-US</p>
+                    <span className="text-[10px] text-purple-500">Kargo cetvelinden</span>
+                  </div>
                 </div>
               </div>
             )}
 
-            {!currentConfig.gst?.enabled && (
-              <p className="text-xs text-orange-600 italic">
-                {currentGstLabel.name} hesaplaması devre dışı. {selectedCountry === 'AU' ? 'FBA satışlarınız için ABN+GST kaydınız varsa aktif edin.' : `${currentGstLabel.name} kaydınız varsa aktif edin.`}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-          {/* Quick summary */}
-          <div className="bg-slate-100 rounded-xl p-4">
-            <h5 className="font-semibold text-slate-700 mb-3">Özet - {countryInfo.flag} {countryInfo.label}</h5>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-slate-500">FBA Kargo:</span>
-                <span className="ml-2 font-medium">${currentConfig.fba.shippingPerDesi}/desi</span>
-              </div>
-              <div>
-                <span className="text-slate-500">FBA Depo:</span>
-                <span className="ml-2 font-medium">%{currentConfig.fba.warehousePercent}</span>
-              </div>
-              <div>
-                <span className="text-slate-500">FBM Gümrük:</span>
-                <span className="ml-2 font-medium">%{currentConfig.fbm.fromTR.customsDutyPercent}</span>
-              </div>
-              <div>
-                <span className="text-slate-500">FBM DDP:</span>
-                <span className="ml-2 font-medium">${currentConfig.fbm.fromTR.ddpFee}</span>
-              </div>
-              {showGSTSettings && currentConfig.gst?.enabled && (
-                <div>
-                  <span className="text-slate-500">{currentGstLabel.name}:</span>
-                  <span className="ml-2 font-medium">%{currentConfig.gst.ratePercent}</span>
+            {/* GST/VAT Settings - READ ONLY */}
+            {showGSTSettings && currentConfig.gst?.enabled && (
+              <div className="mt-6 bg-orange-50 rounded-xl p-5">
+                <h5 className="font-semibold text-orange-800 mb-4">{currentGstLabel.name} Ayarları</h5>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <span className="text-xs text-orange-600">Oran</span>
+                    <p className="font-bold text-orange-900">%{currentConfig.gst?.ratePercent || 0}</p>
+                  </div>
+                  <div className="text-center">
+                    <span className="text-xs text-orange-600">Uygulama</span>
+                    <p className="font-bold text-orange-900">{currentConfig.gst?.applyTo || 'FBA'}</p>
+                  </div>
+                  <div className="text-center">
+                    <span className="text-xs text-orange-600">Fiyata Dahil</span>
+                    <p className="font-bold text-orange-900">{currentConfig.gst?.includedInPrice ? 'Evet' : 'Hayır'}</p>
+                  </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </>
       )}

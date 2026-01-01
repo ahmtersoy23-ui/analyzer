@@ -20,6 +20,8 @@ export interface ProductProfitAnalysis {
   totalOrders: number;
   totalQuantity: number;
   refundedQuantity: number;
+  replacementCount: number;  // Replacement order count
+  mscfCount: number;         // MSCF count
   avgSalePrice: number;
 
   // Fulfillment breakdown
@@ -90,6 +92,8 @@ export interface CategoryProfitAnalysis {
   totalOrders: number;
   totalQuantity: number;
   refundedQuantity: number;
+  replacementCount: number;  // Replacement order count
+  mscfCount: number;         // MSCF count
   avgSalePrice: number;
 
   // Fulfillment breakdown
@@ -167,6 +171,8 @@ export interface ParentProfitAnalysis {
   totalOrders: number;
   totalQuantity: number;
   refundedQuantity: number;
+  replacementCount: number;  // Replacement order count
+  mscfCount: number;         // MSCF count
   avgSalePrice: number;
 
   // Fulfillment breakdown
@@ -237,6 +243,8 @@ export interface SKUProfitAnalysis {
   totalOrders: number;
   totalQuantity: number;
   refundedQuantity: number;
+  replacementCount: number;  // Orders with productSales=0 and total=0 (replacement orders)
+  mscfCount: number;         // Orders with productSales=0 and total<0 (MSCF)
   avgSalePrice: number;
 
   // Amazon Fees (actual from transactions)
@@ -340,7 +348,7 @@ export interface GlobalCostPercentages {
 export interface PricingCategoryExpense {
   category: string;
   marketplace: string;           // US, UK, DE, etc.
-  fulfillmentType: 'FBA' | 'FBM' | 'Mixed';
+  fulfillmentType: 'FBA' | 'FBM' | 'FBM-TR' | 'FBM-US' | 'Mixed';  // US has FBM-TR (from Turkey) and FBM-US
 
   // Sample info
   sampleSize: number;            // Number of orders analyzed

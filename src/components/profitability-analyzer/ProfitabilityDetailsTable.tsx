@@ -612,6 +612,8 @@ const SKUTable: React.FC<SKUTableProps> = ({
           <SortableHeader column="ddpFee" label="DDP" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-amber-50" />
           <SortableHeader column="warehouseCost" label="Warehouse" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-amber-50" />
           <SortableHeader column="gstCost" label="GST" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-orange-50" />
+          <SortableHeader column="replacementCount" label="Replace" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-purple-50" />
+          <SortableHeader column="mscfCount" label="MCF" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="green" className="bg-purple-50" />
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -804,7 +806,7 @@ const SKUTable: React.FC<SKUTableProps> = ({
                 <span className="text-slate-300">-</span>
               )}
             </td>
-            <td className="px-3 py-2 text-right bg-orange-50/30 border-r border-slate-100 whitespace-nowrap">
+            <td className="px-3 py-2 text-right bg-orange-50/30 whitespace-nowrap">
               {sku.gstCost > 0 ? (
                 <>
                   <div className="text-orange-600 font-medium">
@@ -814,6 +816,20 @@ const SKUTable: React.FC<SKUTableProps> = ({
                   </div>
                   <div className="text-[10px] text-slate-400">{formatPercent((sku.gstCost / sku.totalRevenue) * 100)}</div>
                 </>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
+            <td className="px-3 py-2 text-right bg-purple-50/30 whitespace-nowrap">
+              {sku.replacementCount > 0 ? (
+                <span className="text-purple-600 font-medium">{sku.replacementCount}</span>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
+            <td className="px-3 py-2 text-right bg-purple-50/30 border-r border-slate-100 whitespace-nowrap">
+              {sku.mscfCount > 0 ? (
+                <span className="text-purple-600 font-medium">{sku.mscfCount}</span>
               ) : (
                 <span className="text-slate-300">-</span>
               )}
@@ -852,6 +868,8 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
       totalOrders: acc.totalOrders + cat.totalOrders,
       totalQuantity: acc.totalQuantity + cat.totalQuantity,
       refundedQuantity: acc.refundedQuantity + cat.refundedQuantity,
+      replacementCount: acc.replacementCount + cat.replacementCount,
+      mscfCount: acc.mscfCount + cat.mscfCount,
       totalProducts: acc.totalProducts + cat.totalProducts,
       totalParents: acc.totalParents + cat.totalParents,
       sellingFees: acc.sellingFees + cat.sellingFees,
@@ -876,6 +894,8 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
       totalOrders: 0,
       totalQuantity: 0,
       refundedQuantity: 0,
+      replacementCount: 0,
+      mscfCount: 0,
       totalProducts: 0,
       totalParents: 0,
       sellingFees: 0,
@@ -924,6 +944,8 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
     totalOrders: totals.totalOrders,
     totalQuantity: totals.totalQuantity,
     refundedQuantity: totals.refundedQuantity,
+    replacementCount: totals.replacementCount,
+    mscfCount: totals.mscfCount,
     avgSalePrice: totals.totalQuantity > 0 ? totals.totalRevenue / totals.totalQuantity : 0,
     fbaRevenue: totals.fbaRevenue,
     fbmRevenue: totals.fbmRevenue,
@@ -991,6 +1013,8 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
           <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">DDP</th>
           <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">Warehouse</th>
           <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-orange-50">GST</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-purple-50">Replace</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-purple-50">MCF</th>
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -1093,6 +1117,20 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
                 <div className="text-orange-600 font-medium">{formatPercent(allGstCostPercent)}</div>
                 <div className="text-[10px] text-slate-400">{formatMoney(totals.gstCost)}</div>
               </>
+            ) : (
+              <span className="text-slate-300">-</span>
+            )}
+          </td>
+          <td className="px-3 py-3 text-right bg-purple-50/30 whitespace-nowrap">
+            {totals.replacementCount > 0 ? (
+              <span className="text-purple-600 font-medium">{totals.replacementCount}</span>
+            ) : (
+              <span className="text-slate-300">-</span>
+            )}
+          </td>
+          <td className="px-3 py-3 text-right bg-purple-50/30 whitespace-nowrap">
+            {totals.mscfCount > 0 ? (
+              <span className="text-purple-600 font-medium">{totals.mscfCount}</span>
             ) : (
               <span className="text-slate-300">-</span>
             )}
@@ -1204,6 +1242,20 @@ const CategoryTable: React.FC<CategoryTableProps> = ({
                 <span className="text-slate-300">-</span>
               )}
             </td>
+            <td className="px-3 py-2 text-right bg-purple-50/30 whitespace-nowrap">
+              {cat.replacementCount > 0 ? (
+                <span className="text-purple-600 font-medium">{cat.replacementCount}</span>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
+            <td className="px-3 py-2 text-right bg-purple-50/30 whitespace-nowrap">
+              {cat.mscfCount > 0 ? (
+                <span className="text-purple-600 font-medium">{cat.mscfCount}</span>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -1257,6 +1309,8 @@ const ParentTable: React.FC<ParentTableProps> = ({
           <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">DDP</th>
           <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-amber-50">Warehouse</th>
           <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-orange-50">GST</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-purple-50">Replace</th>
+          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap bg-purple-50">MCF</th>
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -1365,6 +1419,20 @@ const ParentTable: React.FC<ParentTableProps> = ({
                 <span className="text-slate-300">-</span>
               )}
             </td>
+            <td className="px-3 py-2 text-right bg-purple-50/30 whitespace-nowrap">
+              {par.replacementCount > 0 ? (
+                <span className="text-purple-600 font-medium">{par.replacementCount}</span>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
+            <td className="px-3 py-2 text-right bg-purple-50/30 whitespace-nowrap">
+              {par.mscfCount > 0 ? (
+                <span className="text-purple-600 font-medium">{par.mscfCount}</span>
+              ) : (
+                <span className="text-slate-300">-</span>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -1423,6 +1491,8 @@ const ProductTable: React.FC<ProductTableProps> = ({
           <SortableHeader column="ddpFee" label="DDP" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-amber-50" />
           <SortableHeader column="warehouseCost" label="Warehouse" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-amber-50" />
           <SortableHeader column="gstCost" label="GST" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-orange-50" />
+          <SortableHeader column="replacementCount" label="Replace" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-purple-50" />
+          <SortableHeader column="mscfCount" label="MCF" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="blue" className="bg-purple-50" />
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-slate-100">
@@ -1613,6 +1683,20 @@ const ProductTable: React.FC<ProductTableProps> = ({
                     </div>
                     <div className="text-[10px] text-slate-400">{formatPercent((product.gstCost / product.totalRevenue) * 100)}</div>
                   </>
+                ) : (
+                  <span className="text-slate-300">-</span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-right bg-purple-50/30 whitespace-nowrap">
+                {product.replacementCount > 0 ? (
+                  <span className="text-purple-600 font-medium">{product.replacementCount}</span>
+                ) : (
+                  <span className="text-slate-300">-</span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-right bg-purple-50/30 whitespace-nowrap">
+                {product.mscfCount > 0 ? (
+                  <span className="text-purple-600 font-medium">{product.mscfCount}</span>
                 ) : (
                   <span className="text-slate-300">-</span>
                 )}

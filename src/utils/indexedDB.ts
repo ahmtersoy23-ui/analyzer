@@ -15,6 +15,7 @@ export interface TransactionData {
   id: string;
   fileName: string;
   date: Date;
+  dateOnly: string;  // YYYY-MM-DD format - original date without timezone conversion for filtering
   type: string;
   categoryType: string;
   orderId: string;
@@ -138,81 +139,108 @@ export const saveTransactions = async (
   fileName: string
 ): Promise<SaveTransactionsResult> => {
   const db = await initDB();
+  const uploadDate = new Date();
 
-  // Use object to avoid closure issues in loop
-  const counters = { added: 0, skipped: 0 };
+  console.time('[IndexedDB] Total save time');
 
-  return new Promise(async (resolve, reject) => {
-    const transaction = db.transaction([TRANSACTIONS_STORE, METADATA_STORE], 'readwrite');
-    const transactionStore = transaction.objectStore(TRANSACTIONS_STORE);
-    const metadataStore = transaction.objectStore(METADATA_STORE);
+  // Step 1: Get all existing keys for this marketplace (bulk read)
+  console.time('[IndexedDB] Fetch existing keys');
+  const existingKeys = await new Promise<Set<string>>((resolve, reject) => {
+    const tx = db.transaction([TRANSACTIONS_STORE], 'readonly');
+    const store = tx.objectStore(TRANSACTIONS_STORE);
+    const index = store.index('marketplaceCode');
+    const request = index.getAllKeys(marketplaceCode);
 
-    // Process each transaction
-    const uploadDate = new Date();
+    request.onsuccess = () => {
+      resolve(new Set(request.result as string[]));
+    };
+    request.onerror = () => reject(request.error);
+  });
+  console.timeEnd('[IndexedDB] Fetch existing keys');
+  console.log(`[IndexedDB] Found ${existingKeys.size} existing keys`);
 
-    for (const trans of transactions) {
-      const uniqueKey = generateUniqueKey(trans);
+  // Step 2: Prepare transactions - generate keys and filter duplicates
+  console.time('[IndexedDB] Prepare transactions');
+  const newTransactions: TransactionData[] = [];
+  let skipped = 0;
 
-      // Check if already exists
-      const existingRequest = transactionStore.get(uniqueKey);
+  for (const trans of transactions) {
+    const uniqueKey = generateUniqueKey(trans);
 
-      await new Promise<void>((resolveCheck) => {
-        existingRequest.onsuccess = () => {
-          if (existingRequest.result) {
-            // Already exists, skip
-            counters.skipped++;
-            resolveCheck();
-          } else {
-            // New transaction, add it
-            const fullTransaction: TransactionData = {
-              ...trans as TransactionData,
-              uniqueKey,
-              uploadDate,
-              marketplaceCode
-            };
+    if (existingKeys.has(uniqueKey)) {
+      skipped++;
+    } else {
+      // Mark as seen to avoid duplicates within the same batch
+      existingKeys.add(uniqueKey);
 
-            const addRequest = transactionStore.add(fullTransaction);
-            addRequest.onsuccess = () => {
-              counters.added++;
-              resolveCheck();
-            };
-            addRequest.onerror = () => {
-              resolveCheck();
-            };
-          }
-        };
-        existingRequest.onerror = () => {
-          resolveCheck();
-        };
+      newTransactions.push({
+        ...trans as TransactionData,
+        uniqueKey,
+        uploadDate,
+        marketplaceCode
       });
     }
+  }
+  console.timeEnd('[IndexedDB] Prepare transactions');
+  console.log(`[IndexedDB] New: ${newTransactions.length}, Skipped: ${skipped}`);
 
-    // Update metadata
+  // Step 3: Bulk insert in batches (5000 per transaction for memory efficiency)
+  console.time('[IndexedDB] Bulk insert');
+  const BATCH_SIZE = 5000;
+  let added = 0;
+
+  for (let i = 0; i < newTransactions.length; i += BATCH_SIZE) {
+    const batch = newTransactions.slice(i, i + BATCH_SIZE);
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([TRANSACTIONS_STORE], 'readwrite');
+      const store = tx.objectStore(TRANSACTIONS_STORE);
+
+      for (const trans of batch) {
+        store.add(trans);
+      }
+
+      tx.oncomplete = () => {
+        added += batch.length;
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    });
+
+    // Log progress for large imports
+    if (newTransactions.length > BATCH_SIZE) {
+      console.log(`[IndexedDB] Progress: ${Math.min(i + BATCH_SIZE, newTransactions.length)}/${newTransactions.length}`);
+    }
+  }
+  console.timeEnd('[IndexedDB] Bulk insert');
+
+  // Step 4: Update metadata
+  console.time('[IndexedDB] Update metadata');
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([METADATA_STORE], 'readwrite');
+    const metadataStore = tx.objectStore(METADATA_STORE);
     const metadataRequest = metadataStore.get(marketplaceCode);
+
     metadataRequest.onsuccess = () => {
       let metadata: MarketplaceMetadata = metadataRequest.result;
+      const dates = transactions.map(t => t.date).filter(Boolean) as Date[];
 
       if (!metadata) {
-        // Create new metadata
-        const dates = transactions.map(t => t.date).filter(Boolean) as Date[];
         metadata = {
           code: marketplaceCode,
           name: marketplaceCode,
-          transactionCount: counters.added,
+          transactionCount: added,
           lastUpdate: uploadDate,
           dateRange: {
-            start: new Date(Math.min(...dates.map(d => d.getTime()))),
-            end: new Date(Math.max(...dates.map(d => d.getTime())))
+            start: dates.length > 0 ? new Date(Math.min(...dates.map(d => d.getTime()))) : uploadDate,
+            end: dates.length > 0 ? new Date(Math.max(...dates.map(d => d.getTime()))) : uploadDate
           },
           uploadHistory: []
         };
       } else {
-        // Update existing metadata
-        metadata.transactionCount += counters.added;
+        metadata.transactionCount += added;
         metadata.lastUpdate = uploadDate;
 
-        // Update date range
-        const dates = transactions.map(t => t.date).filter(Boolean) as Date[];
         if (dates.length > 0) {
           const newStart = new Date(Math.min(...dates.map(d => d.getTime())));
           const newEnd = new Date(Math.max(...dates.map(d => d.getTime())));
@@ -226,15 +254,13 @@ export const saveTransactions = async (
         }
       }
 
-      // Add upload history
       metadata.uploadHistory.push({
         date: uploadDate,
         fileName,
-        addedCount: counters.added,
-        skippedCount: counters.skipped
+        addedCount: added,
+        skippedCount: skipped
       });
 
-      // Keep only last 20 upload history entries
       if (metadata.uploadHistory.length > 20) {
         metadata.uploadHistory = metadata.uploadHistory.slice(-20);
       }
@@ -242,12 +268,14 @@ export const saveTransactions = async (
       metadataStore.put(metadata);
     };
 
-    transaction.oncomplete = () => {
-      resolve({ added: counters.added, skipped: counters.skipped, total: transactions.length });
-    };
-
-    transaction.onerror = () => reject(transaction.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
   });
+  console.timeEnd('[IndexedDB] Update metadata');
+
+  console.timeEnd('[IndexedDB] Total save time');
+
+  return { added, skipped, total: transactions.length };
 };
 
 // Get all transactions for a marketplace
@@ -399,14 +427,37 @@ export const clearAllData = async (): Promise<void> => {
     const transactionStore = transaction.objectStore(TRANSACTIONS_STORE);
     const metadataStore = transaction.objectStore(METADATA_STORE);
 
-    transactionStore.clear();
-    metadataStore.clear();
+    // Clear both stores and wait for requests to complete
+    const clearTransactions = transactionStore.clear();
+    const clearMetadata = metadataStore.clear();
+
+    let transactionsCleared = false;
+    let metadataCleared = false;
+
+    clearTransactions.onsuccess = () => {
+      console.log('✅ Transactions store cleared');
+      transactionsCleared = true;
+    };
+
+    clearMetadata.onsuccess = () => {
+      console.log('✅ Metadata store cleared');
+      metadataCleared = true;
+    };
 
     transaction.oncomplete = () => {
-      console.log('✅ All data cleared');
+      console.log('✅ All data cleared successfully');
       resolve();
     };
-    transaction.onerror = () => reject(transaction.error);
+
+    transaction.onerror = (event) => {
+      console.error('❌ Error clearing data:', transaction.error);
+      reject(transaction.error);
+    };
+
+    transaction.onabort = (event) => {
+      console.error('❌ Transaction aborted:', transaction.error);
+      reject(transaction.error || new Error('Transaction aborted'));
+    };
   });
 };
 

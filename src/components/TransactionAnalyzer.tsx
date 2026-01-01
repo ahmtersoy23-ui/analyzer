@@ -16,6 +16,7 @@ import {
   categorizeTransactionType,
   parseNumber,
   parseDate,
+  extractDateOnly,
   detectMarketplace,
   translateDescription,
   formatDateHuman
@@ -170,14 +171,32 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   // Generic type to handle both TransactionData and DB.TransactionData
   const enrichTransactionsWithProductData = async <T extends TransactionData>(data: T[]): Promise<T[]> => {
     try {
+      console.log(`[Enrichment] Starting enrichment for ${data.length} transactions`);
       const productInfo = await fetchProductMapping();
+      console.log(`[Enrichment] Got ${productInfo.length} products from mapping`);
+
       if (productInfo.length > 0) {
         const productMap = createProductMap(productInfo);
+
+        // Debug: Check a few SKUs from transactions against the map
+        const sampleTx = data.slice(0, 5);
+        console.log('[Enrichment] Sample transaction SKUs:', sampleTx.map(t => `${t.marketplaceCode}:${t.sku}`));
+        sampleTx.forEach(t => {
+          const found = productMap.get(`${t.marketplaceCode}:${t.sku}`) || productMap.get(t.sku);
+          console.log(`[Enrichment] SKU ${t.sku} (${t.marketplaceCode}): ${found ? 'FOUND - ' + found.category : 'NOT FOUND'}`);
+        });
+
         const enriched = data.map(transaction => enrichTransaction(transaction, productMap) as T);
+
+        // Count enriched transactions
+        const withCategory = enriched.filter(t => t.productCategory).length;
+        const withCost = enriched.filter(t => t.productCost !== null && t.productCost !== undefined).length;
+        console.log(`[Enrichment] Results: ${withCategory}/${data.length} with category, ${withCost}/${data.length} with cost`);
+
         return enriched;
       }
-    } catch {
-      // Product enrichment failed silently
+    } catch (err) {
+      console.error('[Enrichment] Failed:', err);
     }
     return data;
   };
@@ -388,10 +407,17 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
             const marketplaceValue = getCell('marketplace');
             const finalMarketplace = marketplaceValue || (detectedMarketplace ? `Amazon.${detectedMarketplace.toLowerCase()}` : 'Unknown');
 
+            // marketplaceCode: Önce satırdaki marketplace'den tespit et, yoksa detected marketplace'i kullan
+            // Bu alan enrichment sırasında SKU eşleştirmesi için kritik
+            const rowMarketplaceCode = marketplaceValue ? detectMarketplace(marketplaceValue) : null;
+            const finalMarketplaceCode = rowMarketplaceCode || detectedMarketplace || '';
+
+            const rawDateValue = getCell('date');
             return {
               id: `${file.name}-${index}`,
               fileName: file.name,
-              date: parseDate(getCell('date'))!,
+              date: parseDate(rawDateValue)!,
+              dateOnly: extractDateOnly(rawDateValue),  // Original date without timezone conversion (YYYY-MM-DD)
               type: typeValue || '',
               categoryType,
               orderId: getCell('orderId') || '',
@@ -399,6 +425,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
               description,
               descriptionLower,
               marketplace: finalMarketplace,
+              marketplaceCode: finalMarketplaceCode,  // Eklendi: SKU eşleştirmesi için
               fulfillment: detectFulfillment(getCell('fulfillment')),
               orderPostal: getCell('orderPostal') || '',
               quantity: parseNumber(getCell('quantity')),
@@ -550,7 +577,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
             }
 
             // Auto-save to localStorage after successful DB save
-            await DB.saveAutoBackup();
+            // Auto-backup disabled - not needed
           } catch {
             warnings.push(`${file.name} veritabanına kaydedilemedi (devam edildi)`);
           }
@@ -633,11 +660,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
       try {
         setLoading(true);
 
-        // First, try to restore from localStorage backup (in case browser cleared IndexedDB)
-        const restored = await DB.loadAutoBackup();
-        if (restored) {
-          console.log('Data restored from auto-backup');
-        }
+        // Auto-backup disabled - not needed
 
         // Get all marketplace metadata
         const metadataList = await DB.getAllMarketplaceMetadata();
@@ -1242,19 +1265,48 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                 onClick={async () => {
                   if (window.confirm('⚠️ Tüm veriler silinecek! Devam etmek istiyor musunuz?\n\n- Tüm transactions (IndexedDB)\n- Product mapping cache (localStorage)\n- Sayfa yenilenecek')) {
                     try {
-                      // Clear all IndexedDB data
+                      // First close any existing DB connections
                       await DB.clearAllData();
 
-                      // Clear product mapping cache
+                      // Delete the entire database using Promise wrapper
+                      await new Promise<void>((resolve, reject) => {
+                        const deleteRequest = indexedDB.deleteDatabase('AmazonAnalyzerDB');
+                        deleteRequest.onsuccess = () => {
+                          console.log('✅ Database deleted successfully');
+                          resolve();
+                        };
+                        deleteRequest.onerror = () => {
+                          console.log('❌ Database delete error');
+                          reject(new Error('Failed to delete database'));
+                        };
+                        deleteRequest.onblocked = () => {
+                          console.log('⚠️ Database delete blocked - forcing reload');
+                          resolve(); // Continue anyway
+                        };
+                      });
+
+                      // Clear ALL localStorage items related to the app
                       localStorage.removeItem('productMapping_cache');
                       localStorage.removeItem('productMapping_timestamp');
+                      localStorage.removeItem('profitability_filters');
+                      localStorage.removeItem('amazonAnalyzerFilters');
+                      // IMPORTANT: Clear auto-backup to prevent restore on reload
+                      localStorage.removeItem('amazonAnalyzerAutoBackup');
+                      localStorage.removeItem('amazonAnalyzerLastBackup');
+
+                      // Also clear React state before reload
+                      setAllData([]);
+                      setStoredFiles([]);
 
                       window.alert('✅ Tüm veriler temizlendi! Sayfa yenilenecek...');
 
-                      // Reload page
-                      window.location.reload();
-                    } catch {
-                      window.alert('❌ Veri temizlenirken hata oluştu!');
+                      // Force hard reload to clear any cached state
+                      window.location.href = window.location.href;
+                    } catch (err) {
+                      console.error('Clear error:', err);
+                      // Even if there's an error, try to reload
+                      window.alert('⚠️ Bazı veriler temizlenemedi, sayfa yenilenecek...');
+                      window.location.href = window.location.href;
                     }
                   }
                 }}

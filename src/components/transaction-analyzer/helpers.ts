@@ -204,6 +204,55 @@ export const parseNumber = (value: unknown): number => {
 };
 
 /**
+ * Month name to number mapping (English)
+ */
+const MONTH_MAP: Record<string, string> = {
+  'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04',
+  'may': '05', 'jun': '06', 'jul': '07', 'aug': '08',
+  'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'
+};
+
+/**
+ * Extract date-only string (YYYY-MM-DD) from date string
+ * Preserves original date without timezone conversion
+ */
+export const extractDateOnly = (value: unknown): string => {
+  if (!value) return '';
+  try {
+    let str = String(value).trim();
+
+    // European format: DD.MM.YYYY or DD/MM/YYYY
+    const europeanMatch = str.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+    if (europeanMatch) {
+      const day = europeanMatch[1].padStart(2, '0');
+      const month = europeanMatch[2].padStart(2, '0');
+      const year = europeanMatch[3];
+      return `${year}-${month}-${day}`;
+    }
+
+    // US format: Month DD YYYY (e.g., "Nov 30 2025 2:53:19 PM PST")
+    const usMatch = str.match(/([A-Za-z]+)\s+(\d{1,2})\s+(\d{4})/);
+    if (usMatch) {
+      const monthStr = usMatch[1].toLowerCase().substring(0, 3);
+      const month = MONTH_MAP[monthStr] || '01';
+      const day = usMatch[2].padStart(2, '0');
+      const year = usMatch[3];
+      return `${year}-${month}-${day}`;
+    }
+
+    // ISO format: YYYY-MM-DD
+    const isoMatch = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    }
+
+    return '';
+  } catch {
+    return '';
+  }
+};
+
+/**
  * Parse date from various formats
  */
 export const parseDate = (value: unknown): Date | null => {

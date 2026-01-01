@@ -16,6 +16,26 @@ import * as XLSX from 'xlsx';
 const EXPORT_VERSION = 1;
 
 /**
+ * Map fulfillment type for export
+ * US has special FBM types: FBM-TR (from Turkey) and FBM-US (from US)
+ * Other marketplaces use plain FBM
+ */
+const mapFulfillmentTypeForExport = (
+  fulfillmentType: 'FBA' | 'FBM',
+  marketplace: string
+): string => {
+  if (fulfillmentType === 'FBA') return 'FBA';
+
+  // US marketplace has FBM-TR (Turkey sourced) - this is our actual data
+  // FBM-US would need separate calculation with no customs/ddp
+  if (marketplace === 'US') {
+    return 'FBM-TR';
+  }
+
+  return 'FBM';
+};
+
+/**
  * Helper to build a single category expense entry
  */
 const buildCategoryExpense = (
@@ -27,6 +47,8 @@ const buildCategoryExpense = (
   revenue: number,
   quantity: number
 ): PricingCategoryExpense => {
+  // Map fulfillment type for export (US FBM -> FBM-TR)
+  const exportFulfillmentType = mapFulfillmentTypeForExport(fulfillmentType, marketplace);
   // Filter SKUs by fulfillment type for accurate cost calculation
   const filteredSkus = categorySkus.filter(s => s.fulfillment === fulfillmentType);
 
@@ -61,7 +83,7 @@ const buildCategoryExpense = (
   return {
     category: cat.category,
     marketplace,
-    fulfillmentType,
+    fulfillmentType: exportFulfillmentType as 'FBA' | 'FBM' | 'FBM-TR' | 'FBM-US',
 
     // Sample info
     sampleSize: filteredSkus.length > 0 ? filteredSkus.reduce((sum, s) => sum + s.totalOrders, 0) : cat.totalOrders,
@@ -556,4 +578,222 @@ export const bulkExportForPriceLab = (
   }
 
   return bulkData;
+};
+
+// ============================================
+// AMAZON EXPENSES EXPORT FOR PRICELAB
+// ============================================
+
+/**
+ * Amazon Expenses data structure for a single marketplace/fulfillment combination
+ */
+export interface AmazonExpenseEntry {
+  // Amazon fees (actual values from transactions)
+  sellingFees: number;
+  fbaFees: number;
+  vat: number;
+  advertisingCost: number;
+  refundLoss: number;
+
+  // Summary stats
+  totalOrders: number;
+  totalRevenue: number;
+  totalQuantity: number;
+
+  // Calculated percentages (for reference)
+  sellingFeePercent: number;
+  fbaFeePercent: number;
+  advertisingPercent: number;
+  refundLossPercent: number;
+}
+
+/**
+ * Amazon Expenses export structure
+ * Organized by marketplace -> fulfillment type
+ */
+export interface AmazonExpensesExport {
+  version: number;
+  exportedAt: string;
+  sourceApp: 'amazon-analyzer';
+  period: {
+    start: string;
+    end: string;
+  };
+  marketplaces: {
+    [marketplaceCode: string]: {
+      FBA?: AmazonExpenseEntry;
+      FBM?: AmazonExpenseEntry;
+      'FBM-US'?: AmazonExpenseEntry;  // US-only: Local warehouse FBM
+    };
+  };
+  summary: {
+    totalMarketplaces: number;
+    totalRevenue: number;
+    totalOrders: number;
+  };
+}
+
+/**
+ * Calculate Amazon expenses from SKU profitability data
+ * Groups by marketplace and fulfillment type
+ */
+export const calculateAmazonExpenses = (
+  skuProfitability: SKUProfitAnalysis[],
+  dateRange: { start: Date; end: Date }
+): AmazonExpensesExport => {
+  // Group SKUs by marketplace
+  const marketplaceData = new Map<string, {
+    FBA: SKUProfitAnalysis[];
+    FBM: SKUProfitAnalysis[];
+    'FBM-US': SKUProfitAnalysis[];
+  }>();
+
+  skuProfitability.forEach(sku => {
+    const mp = (sku as any).marketplace as string;
+    if (!mp) return;
+
+    if (!marketplaceData.has(mp)) {
+      marketplaceData.set(mp, { FBA: [], FBM: [], 'FBM-US': [] });
+    }
+
+    const data = marketplaceData.get(mp)!;
+
+    if (sku.fulfillment === 'FBA') {
+      data.FBA.push(sku);
+    } else if (sku.fulfillment === 'FBM') {
+      // For US, check if it's FBM-US (local) or FBM-TR (from Turkey)
+      // FBM-US: no customs duty, no DDP fee
+      // FBM-TR: has customs duty and DDP fee
+      if (mp === 'US') {
+        const hasCustoms = (sku.customsDuty || 0) > 0 || (sku.ddpFee || 0) > 0;
+        if (hasCustoms) {
+          data.FBM.push(sku); // FBM from Turkey
+        } else {
+          data['FBM-US'].push(sku); // FBM from US local warehouse
+        }
+      } else {
+        data.FBM.push(sku);
+      }
+    } else if (sku.fulfillment === 'Mixed') {
+      // For Mixed SKUs, add to both FBA and FBM based on revenue split
+      // This is a simplification - in reality we'd need per-order data
+      data.FBA.push(sku);
+      data.FBM.push(sku);
+    }
+  });
+
+  // Build expense entries
+  const marketplaces: AmazonExpensesExport['marketplaces'] = {};
+  let totalRevenue = 0;
+  let totalOrders = 0;
+
+  const buildExpenseEntry = (skus: SKUProfitAnalysis[]): AmazonExpenseEntry | undefined => {
+    if (skus.length === 0) return undefined;
+
+    const sellingFees = skus.reduce((sum, s) => sum + s.sellingFees, 0);
+    const fbaFees = skus.reduce((sum, s) => sum + s.fbaFees, 0);
+    const vat = skus.reduce((sum, s) => sum + (s.vat || 0), 0);
+    const advertisingCost = skus.reduce((sum, s) => sum + s.advertisingCost, 0);
+    const refundLoss = skus.reduce((sum, s) => sum + s.refundLoss, 0);
+
+    const revenue = skus.reduce((sum, s) => sum + s.totalRevenue, 0);
+    const orders = skus.reduce((sum, s) => sum + s.totalOrders, 0);
+    const quantity = skus.reduce((sum, s) => sum + s.totalQuantity, 0);
+
+    return {
+      sellingFees,
+      fbaFees,
+      vat,
+      advertisingCost,
+      refundLoss,
+      totalOrders: orders,
+      totalRevenue: revenue,
+      totalQuantity: quantity,
+      sellingFeePercent: revenue > 0 ? (sellingFees / revenue) * 100 : 0,
+      fbaFeePercent: revenue > 0 ? (fbaFees / revenue) * 100 : 0,
+      advertisingPercent: revenue > 0 ? (advertisingCost / revenue) * 100 : 0,
+      refundLossPercent: revenue > 0 ? (refundLoss / revenue) * 100 : 0,
+    };
+  };
+
+  marketplaceData.forEach((data, mp) => {
+    const mpEntry: AmazonExpensesExport['marketplaces'][string] = {};
+
+    const fbaEntry = buildExpenseEntry(data.FBA);
+    if (fbaEntry) {
+      mpEntry.FBA = fbaEntry;
+      totalRevenue += fbaEntry.totalRevenue;
+      totalOrders += fbaEntry.totalOrders;
+    }
+
+    const fbmEntry = buildExpenseEntry(data.FBM);
+    if (fbmEntry) {
+      mpEntry.FBM = fbmEntry;
+      totalRevenue += fbmEntry.totalRevenue;
+      totalOrders += fbmEntry.totalOrders;
+    }
+
+    // Only include FBM-US for US marketplace
+    if (mp === 'US') {
+      const fbmUsEntry = buildExpenseEntry(data['FBM-US']);
+      if (fbmUsEntry) {
+        mpEntry['FBM-US'] = fbmUsEntry;
+        totalRevenue += fbmUsEntry.totalRevenue;
+        totalOrders += fbmUsEntry.totalOrders;
+      }
+    }
+
+    if (Object.keys(mpEntry).length > 0) {
+      marketplaces[mp] = mpEntry;
+    }
+  });
+
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    sourceApp: 'amazon-analyzer',
+    period: {
+      start: dateRange.start.toISOString().split('T')[0],
+      end: dateRange.end.toISOString().split('T')[0],
+    },
+    marketplaces,
+    summary: {
+      totalMarketplaces: Object.keys(marketplaces).length,
+      totalRevenue,
+      totalOrders,
+    },
+  };
+};
+
+/**
+ * Download Amazon Expenses as JSON file
+ */
+export const downloadAmazonExpensesJson = (data: AmazonExpensesExport): void => {
+  const jsonString = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonString], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  const date = new Date().toISOString().split('T')[0];
+  const filename = `amazon-expenses-${date}.json`;
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Export Amazon Expenses for PriceLab
+ * Main entry point for the export functionality
+ */
+export const exportAmazonExpensesForPriceLab = (
+  skuProfitability: SKUProfitAnalysis[],
+  dateRange: { start: Date; end: Date }
+): AmazonExpensesExport => {
+  const data = calculateAmazonExpenses(skuProfitability, dateRange);
+  downloadAmazonExpensesJson(data);
+  return data;
 };

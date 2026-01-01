@@ -17,6 +17,7 @@ import type {
 } from '../../types/profitabilityAnalysis';
 import { getShippingRate, getShippingRouteForMarketplace, getUSFBMShippingRate } from './configService';
 import { convertCurrency, CurrencyCode, getMarketplaceCurrency } from '../../utils/currencyExchange';
+import { logger } from '../../utils/logger';
 
 // Re-export types from centralized location
 export type {
@@ -118,6 +119,8 @@ export const calculateProductProfitability = (
     const totalOrders = skus.reduce((sum, s) => sum + s.totalOrders, 0);
     const totalQuantity = skus.reduce((sum, s) => sum + s.totalQuantity, 0);
     const refundedQuantity = skus.reduce((sum, s) => sum + s.refundedQuantity, 0);
+    const replacementCount = skus.reduce((sum, s) => sum + s.replacementCount, 0);
+    const mscfCount = skus.reduce((sum, s) => sum + s.mscfCount, 0);
 
     // FBA/FBM breakdown
     const fbaSkus = skus.filter(s => s.fulfillment === 'FBA');
@@ -195,6 +198,8 @@ export const calculateProductProfitability = (
       totalOrders,
       totalQuantity,
       refundedQuantity,
+      replacementCount,
+      mscfCount,
       avgSalePrice: totalQuantity > 0 ? totalRevenue / totalQuantity : 0,
 
       fbaRevenue,
@@ -287,6 +292,8 @@ export const calculateCategoryProfitability = (
     const totalOrders = categoryParents.reduce((sum, p) => sum + p.totalOrders, 0);
     const totalQuantity = categoryParents.reduce((sum, p) => sum + p.totalQuantity, 0);
     const refundedQuantity = categoryParents.reduce((sum, p) => sum + p.refundedQuantity, 0);
+    const replacementCount = categoryParents.reduce((sum, p) => sum + p.replacementCount, 0);
+    const mscfCount = categoryParents.reduce((sum, p) => sum + p.mscfCount, 0);
     const totalProducts = categoryParents.reduce((sum, p) => sum + p.totalProducts, 0);
 
     // FBA/FBM breakdown
@@ -367,6 +374,8 @@ export const calculateCategoryProfitability = (
       totalOrders,
       totalQuantity,
       refundedQuantity,
+      replacementCount,
+      mscfCount,
       avgSalePrice: totalQuantity > 0 ? totalRevenue / totalQuantity : 0,
 
       fbaRevenue,
@@ -437,6 +446,11 @@ export const calculateSKUProfitability = (
   const costBySku = new Map<string, ProductCostData>();
   costData.forEach(c => costBySku.set(c.sku, c));
 
+  // Debug: Log cost data stats
+  const inputWithCost = costData.filter(c => c.cost !== null).length;
+  const inputWithSize = costData.filter(c => c.size !== null).length;
+  logger.log(`[calculateSKUProfitability] Received ${costData.length} SKUs in costData: ${inputWithCost} with cost, ${inputWithSize} with size`);
+
   // EU/UK VAT rates and thresholds for seller-owed VAT calculation
   // When Amazon doesn't collect VAT (FBM orders > €150/£135), seller owes it
   const EU_UK_VAT_CONFIG: Record<string, { rate: number; threshold: number }> = {
@@ -459,6 +473,8 @@ export const calculateSKUProfitability = (
     orders: number;
     quantity: number;
     refundedQuantity: number;  // İade edilen adet
+    replacementCount: number;  // productSales=0 and total=0 (replacement orders)
+    mscfCount: number;         // productSales=0 and total<0 (MSCF)
     sellingFees: number;
     fbaFees: number;
     vat: number;              // VAT from transactions (EU marketplaces)
@@ -505,6 +521,12 @@ export const calculateSKUProfitability = (
 
     if (!existing) {
       const isOrder = t.categoryType === 'Order';
+      const productSales = t.productSales || 0;
+      const total = t.total || 0;
+      // Replacement: productSales=0 and total=0 (free replacement order)
+      const isReplacement = isOrder && productSales === 0 && total === 0;
+      // MSCF: productSales=0 and total<0 (multi-channel fulfillment fee)
+      const isMscf = isOrder && productSales === 0 && total < 0;
 
       skuMap.set(mapKey, {
         sku: t.sku,
@@ -513,10 +535,12 @@ export const calculateSKUProfitability = (
         category,
         marketplace: groupByMarketplace ? (t.marketplaceCode || null) : null,
         fulfillment: new Set([t.fulfillment || 'Unknown']),
-        revenue: isOrder ? (t.productSales || 0) : 0,
+        revenue: isOrder ? productSales : 0,
         orders: isOrder ? 1 : 0,
         quantity: isOrder ? (t.quantity || 0) : 0,
         refundedQuantity: t.categoryType === 'Refund' ? Math.abs(t.quantity || 0) : 0,
+        replacementCount: isReplacement ? 1 : 0,
+        mscfCount: isMscf ? 1 : 0,
         sellingFees: isOrder ? Math.abs(t.sellingFees || 0) : 0,
         fbaFees: isOrder ? Math.abs(t.fbaFees || 0) : 0,
         vat: isOrder ? Math.abs(t.vat || 0) : 0,
@@ -527,13 +551,23 @@ export const calculateSKUProfitability = (
       if (t.fulfillment) existing.fulfillment.add(t.fulfillment);
 
       if (t.categoryType === 'Order') {
-        existing.revenue += t.productSales || 0;
+        const productSales = t.productSales || 0;
+        const total = t.total || 0;
+
+        existing.revenue += productSales;
         existing.orders++;
         existing.quantity += t.quantity || 0;
         existing.sellingFees += Math.abs(t.sellingFees || 0);
         existing.fbaFees += Math.abs(t.fbaFees || 0);
         existing.vat += Math.abs(t.vat || 0);
         existing.sellerOwedVat += transactionSellerOwedVat;
+
+        // Track replacement and MSCF orders
+        if (productSales === 0 && total === 0) {
+          existing.replacementCount++;
+        } else if (productSales === 0 && total < 0) {
+          existing.mscfCount++;
+        }
       } else if (t.categoryType === 'Refund') {
         existing.totalRefund += Math.abs(t.total || 0);
         existing.refundedQuantity += Math.abs(t.quantity || 0);
@@ -667,8 +701,9 @@ export const calculateSKUProfitability = (
       if (!desi) return { shipping: 0, customs: 0, ddp: 0, found: false };
 
       if (effectiveMarketplace === 'US') {
-        // FBA shipping per desi (gemi bedeli) - LOCAL modunda TR'den depoya gönderim için kullanılır
-        const shippingResult = getUSFBMShippingRate(shippingRates!, desi, normalizedMode, config?.fba.shippingPerDesi || 0);
+        // FBM-US (LOCAL) için depoya gönderim bedeli FBA ile aynı
+        const fbaShippingPerDesi = config?.fba.shippingPerDesi ?? 0;
+        const shippingResult = getUSFBMShippingRate(shippingRates!, desi, normalizedMode, fbaShippingPerDesi);
         if (!shippingResult.found) {
           return { shipping: 0, customs: 0, ddp: 0, found: false };
         }
@@ -756,7 +791,9 @@ export const calculateSKUProfitability = (
     }
 
     // If FBM/Mixed and shipping rate not found, mark as missing size data
-    if ((fulfillment === 'FBM' || fulfillment === 'Mixed') && !shippingRateFound) {
+    // BUT: Keep hasSizeData = true if we already have desi data (just can't calculate exact shipping)
+    // This prevents coverage from dropping when shipping-rates API fails
+    if ((fulfillment === 'FBM' || fulfillment === 'Mixed') && !shippingRateFound && !desi && !customShipping) {
       hasSizeData = false;
     }
 
@@ -813,17 +850,18 @@ export const calculateSKUProfitability = (
         const normalizedMode = effectiveMode === 'US' ? 'LOCAL' : effectiveMode;
 
         if (normalizedMode === 'LOCAL') {
-          // US lokal: Sadece depo+işçilik
-          const localWarehousePercent = config?.fbm.fromLocal?.warehousePercent || 0;
-          warehouseCost = data.revenue * (localWarehousePercent / 100);
+          // FBM-US (US depodan): FBA ile aynı depo yönetim maliyeti kullanılır
+          // FBA Fee ve FBA Cost uygulanmaz (aşağıda zaten fulfillment === 'FBM' için sıfır)
+          const fbaWarehousePercent = config?.fba.warehousePercent || 0;
+          warehouseCost = data.revenue * (fbaWarehousePercent / 100);
           othersCost = warehouseCost;
         } else if (normalizedMode === 'TR') {
           // TR: Vergi + DDP (customs + ddp zaten hesaplandı)
           othersCost = customsDuty + ddpFee;
         } else {
-          // BOTH: İkisinin ortalaması
-          const localWarehousePercent = config?.fbm.fromLocal?.warehousePercent || 0;
-          const localWarehouseCost = data.revenue * (localWarehousePercent / 100);
+          // BOTH: İkisinin ortalaması - US kısmı için FBA warehouse % kullan
+          const fbaWarehousePercent = config?.fba.warehousePercent || 0;
+          const localWarehouseCost = data.revenue * (fbaWarehousePercent / 100);
           const trCost = customsDuty + ddpFee;
           warehouseCost = localWarehouseCost / 2; // Yarısı lokal
           othersCost = (localWarehouseCost + trCost) / 2;
@@ -843,13 +881,15 @@ export const calculateSKUProfitability = (
 
         let fbmOthersCost = 0;
         if (normalizedMode === 'LOCAL') {
-          const localWarehousePercent = config?.fbm.fromLocal?.warehousePercent || 0;
-          fbmOthersCost = (data.revenue / 2) * (localWarehousePercent / 100);
+          // FBM-US: FBA ile aynı depo yönetim maliyeti
+          const fbaWarehousePercent = config?.fba.warehousePercent || 0;
+          fbmOthersCost = (data.revenue / 2) * (fbaWarehousePercent / 100);
         } else if (normalizedMode === 'TR') {
           fbmOthersCost = customsDuty + ddpFee;
         } else {
-          const localWarehousePercent = config?.fbm.fromLocal?.warehousePercent || 0;
-          const localWarehouseCost = (data.revenue / 2) * (localWarehousePercent / 100);
+          // BOTH: US kısmı için FBA warehouse % kullan
+          const fbaWarehousePercent = config?.fba.warehousePercent || 0;
+          const localWarehouseCost = (data.revenue / 2) * (fbaWarehousePercent / 100);
           const trCost = customsDuty + ddpFee;
           fbmOthersCost = (localWarehouseCost + trCost) / 2;
         }
@@ -924,6 +964,8 @@ export const calculateSKUProfitability = (
       totalOrders: data.orders,
       totalQuantity: data.quantity,
       refundedQuantity: data.refundedQuantity,
+      replacementCount: data.replacementCount,
+      mscfCount: data.mscfCount,
       avgSalePrice: data.quantity > 0 ? data.revenue / data.quantity : 0,
       sellingFees: data.sellingFees,
       fbaFees: data.fbaFees,
@@ -961,6 +1003,22 @@ export const calculateSKUProfitability = (
       desi,
     });
   });
+
+  // Debug: Log coverage breakdown
+  const resultWithCost = results.filter(r => r.hasCostData).length;
+  const resultWithSize = results.filter(r => r.hasSizeData).length;
+  const resultWithBoth = results.filter(r => r.hasCostData && r.hasSizeData).length;
+  const resultNoCost = results.filter(r => !r.hasCostData).length;
+  const resultNoSize = results.filter(r => !r.hasSizeData).length;
+  const resultCostButNoSize = results.filter(r => r.hasCostData && !r.hasSizeData).length;
+  const resultSizeButNoCost = results.filter(r => !r.hasCostData && r.hasSizeData).length;
+
+  logger.log(`[calculateSKUProfitability] Results: ${results.length} SKUs total`);
+  logger.log(`  - With cost: ${resultWithCost}, With size: ${resultWithSize}`);
+  logger.log(`  - With BOTH (coverage): ${resultWithBoth}`);
+  logger.log(`  - Missing cost: ${resultNoCost}, Missing size: ${resultNoSize}`);
+  logger.log(`  - Has cost but NO size: ${resultCostButNoSize}`);
+  logger.log(`  - Has size but NO cost: ${resultSizeButNoCost}`);
 
   return results.sort((a, b) => b.totalRevenue - a.totalRevenue);
 };
@@ -1006,6 +1064,8 @@ export const calculateParentProfitability = (
     const totalOrders = names.reduce((sum, n) => sum + n.totalOrders, 0);
     const totalQuantity = names.reduce((sum, n) => sum + n.totalQuantity, 0);
     const refundedQuantity = names.reduce((sum, n) => sum + n.refundedQuantity, 0);
+    const replacementCount = names.reduce((sum, n) => sum + n.replacementCount, 0);
+    const mscfCount = names.reduce((sum, n) => sum + n.mscfCount, 0);
 
     // FBA/FBM breakdown
     const fbaRevenue = names.reduce((sum, n) => sum + n.fbaRevenue, 0);
@@ -1073,6 +1133,8 @@ export const calculateParentProfitability = (
       totalOrders,
       totalQuantity,
       refundedQuantity,
+      replacementCount,
+      mscfCount,
       avgSalePrice: totalQuantity > 0 ? totalRevenue / totalQuantity : 0,
 
       fbaRevenue,

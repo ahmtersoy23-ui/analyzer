@@ -179,6 +179,35 @@ export const groupTransactions = (
 };
 
 /**
+ * Parse filter start date string (YYYY-MM-DD)
+ * Simply returns the string for dateOnly comparison
+ */
+export const parseStartDate = (dateStr: string): string => {
+  // Input is already in YYYY-MM-DD format from date picker
+  return dateStr;
+};
+
+/**
+ * Parse filter end date string (YYYY-MM-DD)
+ * Simply returns the string for dateOnly comparison
+ */
+export const parseEndDate = (dateStr: string): string => {
+  // Input is already in YYYY-MM-DD format from date picker
+  return dateStr;
+};
+
+/**
+ * Check if transaction dateOnly is within filter range
+ * Uses string comparison on YYYY-MM-DD format (works correctly for date ordering)
+ */
+export const isDateInRange = (dateOnly: string, startDate: string | null, endDate: string | null): boolean => {
+  if (!dateOnly) return true; // No dateOnly = include (backwards compatibility)
+  if (startDate && dateOnly < startDate) return false;
+  if (endDate && dateOnly > endDate) return false;
+  return true;
+};
+
+/**
  * Filter transactions by date range
  */
 export const filterByDateRange = (

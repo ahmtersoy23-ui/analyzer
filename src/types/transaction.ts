@@ -6,6 +6,7 @@ export interface TransactionData {
   id: string;
   fileName: string;
   date: Date;
+  dateOnly: string;  // YYYY-MM-DD format - original date without timezone conversion for filtering
   type: string;
   categoryType: string;
   orderId: string;
@@ -27,7 +28,7 @@ export interface TransactionData {
   total: number;
   marketplaceCode: string; // US, UK, DE, etc.
 
-  // Product enrichment fields (from Google Sheets)
+  // Product enrichment fields (from PriceLab API)
   // NOTE: Using 'productCategory' to avoid conflict with 'categoryType' (transaction category)
   asin?: string;
   name?: string;
@@ -35,6 +36,8 @@ export interface TransactionData {
   productCategory?: string;
   productCost?: number | null;    // Ürün maliyeti
   productSize?: number | null;    // Desi (hacimsel ağırlık)
+  productCustomShipping?: number | null;  // SKU bazlı özel kargo (USD)
+  productFbmSource?: string | null;       // TR, LOCAL, BOTH
 }
 
 export interface MarketplaceConfig {

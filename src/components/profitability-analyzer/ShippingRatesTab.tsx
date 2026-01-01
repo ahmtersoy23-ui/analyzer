@@ -1,17 +1,14 @@
 /**
- * Shipping Rates Tab - Kargo cetveli yükleme ve düzenleme
+ * Shipping Rates Tab - Kargo cetveli görüntüleme (READ-ONLY)
+ * Düzenleme için PriceLab kullanılmalı
  */
 
-import React, { useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
-import { Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { ExternalLink } from 'lucide-react';
 import { ShippingRateTable, ShippingRoute } from '../../types/profitability';
-import { createEmptyShippingRates } from '../../services/profitability/configService';
 
 interface ShippingRatesTabProps {
   shippingRates: ShippingRateTable;
-  onFileUpload: (data: Record<string, any>[]) => void;
-  onUpdate: (rates: ShippingRateTable) => void;
 }
 
 const ROUTE_LABELS: Record<ShippingRoute, { label: string; flag: string }> = {
@@ -33,81 +30,12 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   TRY: '₺',
 };
 
+const PRICELAB_URL = 'http://78.47.117.36:3000'; // PriceLab frontend URL
+
 const ShippingRatesTab: React.FC<ShippingRatesTabProps> = ({
   shippingRates,
-  onFileUpload,
-  onUpdate,
 }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [editMode, setEditMode] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<ShippingRoute>('US-TR');
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const data = new Uint8Array(event.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-        onFileUpload(jsonData as Record<string, any>[]);
-      };
-      reader.readAsArrayBuffer(file);
-    } catch (error) {
-      console.error('File read error:', error);
-      alert('Dosya okunamadı');
-    }
-  };
-
-  const handleRateChange = (desi: number, newRate: number) => {
-    const updatedRates = { ...shippingRates };
-    const routeRates = updatedRates.routes[selectedRoute].rates;
-    const existingIndex = routeRates.findIndex(r => r.desi === desi);
-
-    if (existingIndex >= 0) {
-      routeRates[existingIndex].rate = newRate;
-    } else {
-      routeRates.push({ desi, rate: newRate });
-      routeRates.sort((a, b) => a.desi - b.desi);
-    }
-
-    onUpdate(updatedRates);
-  };
-
-  const exportToExcel = () => {
-    // Get all unique desi values
-    const allDesi = new Set<number>();
-    Object.values(shippingRates.routes).forEach(route => {
-      route.rates.forEach(r => allDesi.add(r.desi));
-    });
-    const sortedDesi = Array.from(allDesi).sort((a, b) => a - b);
-
-    // Build data
-    const data = sortedDesi.map(desi => {
-      const row: Record<string, any> = { desi };
-      Object.keys(shippingRates.routes).forEach(route => {
-        const routeRate = shippingRates.routes[route as ShippingRoute].rates.find(r => r.desi === desi);
-        row[route] = routeRate?.rate || '';
-      });
-      return row;
-    });
-
-    // Add currency row
-    const currencyRow: Record<string, string> = { desi: 'PARA BİRİMİ' };
-    Object.entries(shippingRates.routes).forEach(([route, config]) => {
-      currencyRow[route] = config.currency;
-    });
-    data.push(currencyRow);
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Kargo Cetveli');
-    XLSX.writeFile(wb, 'kargo_cetveli.xlsx');
-  };
 
   const currentRouteRates = shippingRates.routes[selectedRoute]?.rates || [];
   const currentCurrency = shippingRates.routes[selectedRoute]?.currency || 'USD';
@@ -118,75 +46,35 @@ const ShippingRatesTab: React.FC<ShippingRatesTabProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Upload section */}
-      <div className="bg-slate-50 rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-slate-800 mb-4">
-          🚚 Kargo Cetveli
-        </h3>
-
-        <p className="text-sm text-slate-600 mb-4">
-          Excel dosyanızda kolonlar: <code className="bg-slate-200 px-1 rounded">desi</code>,{' '}
-          <code className="bg-slate-200 px-1 rounded">US-US</code>,{' '}
-          <code className="bg-slate-200 px-1 rounded">US-TR</code>,{' '}
-          <code className="bg-slate-200 px-1 rounded">UK</code>,{' '}
-          <code className="bg-slate-200 px-1 rounded">EU</code> vb.
-        </p>
-
-        <div className="flex flex-wrap gap-3">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-          >
-            📤 Excel Yükle
-          </button>
-
-          {hasRates && (
-            <>
-              <button
-                onClick={exportToExcel}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
-              >
-                📥 Excel İndir
-              </button>
-
-              <button
-                onClick={() => setEditMode(!editMode)}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  editMode
-                    ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                    : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
-                }`}
-              >
-                ✏️ {editMode ? 'Düzenlemeyi Bitir' : 'Manuel Düzenle'}
-              </button>
-
-              <button
-                onClick={() => {
-                  if (window.confirm('Tüm kargo verilerini silmek istediğinize emin misiniz?')) {
-                    onUpdate(createEmptyShippingRates());
-                  }
-                }}
-                className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium transition-colors flex items-center gap-1"
-              >
-                <Trash2 className="w-4 h-4" /> Sil
-              </button>
-            </>
+      {/* PriceLab redirect banner */}
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-6">
+        <div className="flex items-start gap-4">
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-indigo-800 mb-2">
+              🚚 Kargo Cetveli
+            </h3>
+            <p className="text-sm text-indigo-600 mb-4">
+              Kargo tarifelerini görüntülüyorsunuz. Tarife düzenlemeleri için PriceLab kullanın.
+            </p>
+            <a
+              href={`${PRICELAB_URL}/shipping`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" />
+              PriceLab'da Düzenle
+            </a>
+          </div>
+          {shippingRates.lastUpdated && (
+            <div className="text-right">
+              <span className="text-xs text-indigo-500">Son güncelleme</span>
+              <p className="text-sm font-medium text-indigo-700">
+                {new Date(shippingRates.lastUpdated).toLocaleString('tr-TR')}
+              </p>
+            </div>
           )}
         </div>
-
-        {shippingRates.lastUpdated && (
-          <p className="text-xs text-slate-500 mt-3">
-            Son güncelleme: {new Date(shippingRates.lastUpdated).toLocaleString('tr-TR')}
-          </p>
-        )}
       </div>
 
       {/* Route cards grid */}
@@ -265,26 +153,14 @@ const ShippingRatesTab: React.FC<ShippingRatesTabProps> = ({
                   {currentRouteRates.map((rate, idx) => (
                     <div
                       key={idx}
-                      className="bg-white rounded-lg p-2 text-center shadow-sm border border-blue-100 hover:border-blue-300 transition-colors"
+                      className="bg-white rounded-lg p-2 text-center shadow-sm border border-blue-100"
                     >
                       <div className="text-xs text-blue-600 font-medium mb-1">
                         {rate.desi} desi
                       </div>
-                      {editMode ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={rate.rate}
-                          onChange={(e) =>
-                            handleRateChange(rate.desi, parseFloat(e.target.value) || 0)
-                          }
-                          className="w-full px-1 py-0.5 border border-blue-300 rounded text-center text-sm font-bold"
-                        />
-                      ) : (
-                        <div className="text-sm font-bold text-slate-800">
-                          {currencySymbol}{rate.rate.toFixed(2)}
-                        </div>
-                      )}
+                      <div className="text-sm font-bold text-slate-800">
+                        {currencySymbol}{rate.rate.toFixed(2)}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -303,11 +179,20 @@ const ShippingRatesTab: React.FC<ShippingRatesTabProps> = ({
         <div className="bg-white border border-dashed border-slate-300 rounded-xl p-12 text-center">
           <div className="text-4xl mb-4">📋</div>
           <h3 className="text-lg font-semibold text-slate-700 mb-2">
-            Kargo Cetveli Yüklenmedi
+            Kargo Cetveli Tanımlı Değil
           </h3>
-          <p className="text-sm text-slate-500">
-            Karlılık hesaplaması için kargo cetvelini yükleyin
+          <p className="text-sm text-slate-500 mb-4">
+            Karlılık hesaplaması için PriceLab'dan kargo tarifelerini yükleyin.
           </p>
+          <a
+            href={`${PRICELAB_URL}/shipping`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+          >
+            <ExternalLink className="w-4 h-4" />
+            PriceLab'a Git
+          </a>
         </div>
       )}
     </div>

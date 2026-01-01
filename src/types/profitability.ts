@@ -59,6 +59,7 @@ export interface FBMFromTRConfig {
 }
 
 export interface FBMFromLocalConfig {
+  shippingPerDesi?: number;     // US deposuna gönderim bedeli ($/desi) - FBA ile aynı olabilir
   warehousePercent: number;     // Yerel depo maliyeti %
 }
 
@@ -280,6 +281,7 @@ export const DEFAULT_FBM_FROM_TR: FBMFromTRConfig = {
 };
 
 export const DEFAULT_FBM_FROM_LOCAL: FBMFromLocalConfig = {
+  shippingPerDesi: 1.0,     // Default $1/desi (FBA ile aynı)
   warehousePercent: 3.0,
 };
 

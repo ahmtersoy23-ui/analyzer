@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { AlertTriangle, ChevronDown, ChevronUp, ChevronRight, Download, Check, X, Edit2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, ChevronRight, Download, Check, X, Edit2, Upload, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { SKUProfitAnalysis } from '../../services/profitability/profitabilityAnalytics';
 import type { ProductCostData } from '../../types/profitability';
+import type { MissingSKUInfo } from '../../services/productMapping';
 
 interface CoverageStats {
   totalSkus: number;
@@ -39,6 +40,10 @@ interface CoverageStatsSectionProps {
   // New props for inline editing
   costData?: ProductCostData[];
   onCostDataUpdate?: (updates: CostSizeUpdate[]) => void;
+  // Missing SKU detection
+  missingSKUs?: MissingSKUInfo[];
+  onExportMissingSKUs?: () => void;
+  onSendMissingSKUsToPriceLab?: () => Promise<{ added: number; skipped: number }>;
 }
 
 // Inline edit row component
@@ -259,10 +264,16 @@ export const CoverageStatsSection: React.FC<CoverageStatsSectionProps> = React.m
   formatMoney,
   costData = [],
   onCostDataUpdate,
+  missingSKUs = [],
+  onExportMissingSKUs,
+  onSendMissingSKUsToPriceLab,
 }) => {
   // Section collapsed state - collapsed by default
   const [sectionExpanded, setSectionExpanded] = useState(false);
   const [pendingUpdates, setPendingUpdates] = useState<CostSizeUpdate[]>([]);
+  const [showMissingSKUs, setShowMissingSKUs] = useState(false);
+  const [sendingToPriceLab, setSendingToPriceLab] = useState(false);
+  const [priceLabResult, setPriceLabResult] = useState<{ added: number; skipped: number } | null>(null);
 
   // Get existing cost/size/override for a SKU
   const getExistingData = useCallback((sku: string) => {
@@ -308,6 +319,49 @@ export const CoverageStatsSection: React.FC<CoverageStatsSectionProps> = React.m
     XLSX.writeFile(wb, `excluded-skus-${filterMarketplace}-${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
+  // Export missing SKUs (not in PriceLab mapping)
+  const handleExportMissingSKUs = () => {
+    if (onExportMissingSKUs) {
+      onExportMissingSKUs();
+    } else {
+      // Default export logic
+      const data = missingSKUs.map(sku => ({
+        SKU: sku.sku,
+        ASIN: sku.asin || '',
+        Name: sku.name || '',
+        Marketplace: sku.marketplace,
+        Fulfillment: sku.fulfillment || '',
+        Category: sku.category || '',
+        'Transaction Count': sku.transactionCount,
+        'Total Revenue': sku.totalRevenue,
+      }));
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Missing SKUs');
+      XLSX.writeFile(wb, `missing-skus-${filterMarketplace}-${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+  };
+
+  // Send missing SKUs to PriceLab
+  const handleSendToPriceLab = async () => {
+    if (!onSendMissingSKUsToPriceLab || missingSKUs.length === 0) return;
+
+    setSendingToPriceLab(true);
+    setPriceLabResult(null);
+
+    try {
+      const result = await onSendMissingSKUsToPriceLab();
+      setPriceLabResult(result);
+    } catch (error) {
+      console.error('Failed to send to PriceLab:', error);
+    } finally {
+      setSendingToPriceLab(false);
+    }
+  };
+
+  // Calculate total revenue for missing SKUs
+  const missingSKUsRevenue = missingSKUs.reduce((sum, s) => sum + s.totalRevenue, 0);
+
   // Check if inline editing is enabled
   const canEdit = !!onCostDataUpdate;
 
@@ -330,7 +384,7 @@ export const CoverageStatsSection: React.FC<CoverageStatsSectionProps> = React.m
               {coverageStats.calculatedSkus}/{coverageStats.totalSkus} SKUs ({coverageStats.coveragePercent.toFixed(1)}%)
             </span>
             {/* Excluded breakdown */}
-            {(coverageStats.excludedCount > 0 || coverageStats.gradeResellCount > 0) && (
+            {(coverageStats.excludedCount > 0 || coverageStats.gradeResellCount > 0 || missingSKUs.length > 0) && (
               <div className="flex items-center gap-2 text-xs">
                 {coverageStats.excludedCount > 0 && (
                   <span className="text-red-600" title="Missing cost or size data">
@@ -340,6 +394,12 @@ export const CoverageStatsSection: React.FC<CoverageStatsSectionProps> = React.m
                 {coverageStats.gradeResellCount > 0 && (
                   <span className="text-orange-600" title="Grade & Resell products">
                     G&R: {formatMoney(coverageStats.gradeResellRevenue)}
+                  </span>
+                )}
+                {missingSKUs.length > 0 && (
+                  <span className="text-purple-600 flex items-center gap-1" title="SKUs not in PriceLab mapping">
+                    <AlertCircle className="w-3 h-3" />
+                    Unknown: {missingSKUs.length} SKU
                   </span>
                 )}
               </div>
@@ -492,6 +552,98 @@ export const CoverageStatsSection: React.FC<CoverageStatsSectionProps> = React.m
                           ? 'Değerler otomatik kaydedilir. Tabloya topluca eklemek için Cost Data sekmesini kullanabilirsiniz.'
                           : 'Cost data: Add product costs in "Cost Data" section - Size data: Add desi values and shipping rates'
                         }
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Missing SKUs Section (not in PriceLab) */}
+              {missingSKUs.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-amber-200">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowMissingSKUs(!showMissingSKUs);
+                      }}
+                      className="flex items-center gap-2 text-xs text-purple-700 hover:text-purple-900 font-medium"
+                    >
+                      {showMissingSKUs ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {missingSKUs.length} SKUs not in PriceLab - {formatMoney(missingSKUsRevenue)} revenue
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleExportMissingSKUs();
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-100 hover:bg-purple-200 text-purple-800 rounded transition-colors"
+                      title="Export missing SKUs to Excel"
+                    >
+                      <Download className="w-3 h-3" />
+                      Excel
+                    </button>
+                    {onSendMissingSKUsToPriceLab && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSendToPriceLab();
+                        }}
+                        disabled={sendingToPriceLab}
+                        className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 rounded transition-colors disabled:opacity-50"
+                        title="Send missing SKUs to PriceLab for data entry"
+                      >
+                        <Upload className="w-3 h-3" />
+                        {sendingToPriceLab ? 'Gönderiliyor...' : 'PriceLab\'e Gönder'}
+                      </button>
+                    )}
+                    {priceLabResult && (
+                      <span className="text-xs text-green-600">
+                        {priceLabResult.added} eklendi, {priceLabResult.skipped} atlandı
+                      </span>
+                    )}
+                  </div>
+
+                  {showMissingSKUs && (
+                    <div className="mt-3 bg-white/50 rounded-lg border border-purple-200 overflow-hidden">
+                      <div className="max-h-60 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-purple-100/50 sticky top-0">
+                            <tr>
+                              <th className="text-left px-3 py-2 font-medium text-purple-800">SKU</th>
+                              <th className="text-left px-3 py-2 font-medium text-purple-800">ASIN</th>
+                              <th className="text-left px-3 py-2 font-medium text-purple-800">Name</th>
+                              <th className="text-center px-3 py-2 font-medium text-purple-800">MP</th>
+                              <th className="text-center px-3 py-2 font-medium text-purple-800">Type</th>
+                              <th className="text-right px-3 py-2 font-medium text-purple-800">Tx</th>
+                              <th className="text-right px-3 py-2 font-medium text-purple-800">Revenue</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {missingSKUs.slice(0, 50).map((sku, idx) => (
+                              <tr key={`${sku.marketplace}:${sku.sku}`} className={idx % 2 === 0 ? 'bg-white/30' : 'bg-purple-50/30'}>
+                                <td className="px-3 py-1.5 font-mono text-slate-700">{sku.sku}</td>
+                                <td className="px-3 py-1.5 font-mono text-slate-500 text-[10px]">{sku.asin || '-'}</td>
+                                <td className="px-3 py-1.5 text-slate-600 truncate max-w-[200px]" title={sku.name}>{sku.name || '-'}</td>
+                                <td className="px-3 py-1.5 text-center">
+                                  <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px]">{sku.marketplace}</span>
+                                </td>
+                                <td className="px-3 py-1.5 text-center text-[10px] text-slate-500">{sku.fulfillment || '-'}</td>
+                                <td className="px-3 py-1.5 text-right text-slate-600">{sku.transactionCount}</td>
+                                <td className="px-3 py-1.5 text-right text-slate-700">{formatMoney(sku.totalRevenue)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {missingSKUs.length > 50 && (
+                        <div className="px-3 py-2 bg-purple-100/30 border-t border-purple-200 text-xs text-purple-700">
+                          İlk 50 gösteriliyor. Tamamını görmek için Excel'e export edin.
+                        </div>
+                      )}
+                      <div className="px-3 py-2 bg-purple-100/30 border-t border-purple-200 text-xs text-purple-700">
+                        Bu SKU'lar transaction'larda var ama PriceLab veritabanında yok. Excel'e export edip PriceLab'e ekleyebilirsiniz.
                       </div>
                     </div>
                   )}
