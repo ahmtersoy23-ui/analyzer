@@ -1,5 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import './App.css';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import LoginPage from './components/LoginPage';
 import TransactionAnalyzer from './components/TransactionAnalyzer';
 import type { TransactionData, MarketplaceCode } from './types/transaction';
 import { fetchLiveRates } from './utils/currencyExchange';
@@ -8,6 +10,7 @@ import { fetchLiveRates } from './utils/currencyExchange';
 const ProfitabilityAnalyzer = lazy(() => import('./components/ProfitabilityAnalyzer'));
 const TrendsAnalyzer = lazy(() => import('./components/TrendsAnalyzer'));
 const TestPanel = lazy(() => import('./shared/testing/TestPanel'));
+const UserManagement = lazy(() => import('./components/UserManagement'));
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -19,9 +22,11 @@ const LoadingFallback = () => (
   </div>
 );
 
-type Phase = 'transaction' | 'profitability' | 'trends';
+type Phase = 'transaction' | 'profitability' | 'trends' | 'users';
 
-function App() {
+// Main App Content (requires authentication)
+function AppContent() {
+  const { user, logout, isAdmin } = useAuth();
   const [activePhase, setActivePhase] = useState<Phase>('transaction');
   const [transactionData, setTransactionData] = useState<TransactionData[]>([]);
   const [selectedMarketplace] = useState<MarketplaceCode>('US');
@@ -114,6 +119,37 @@ function App() {
                   <span className="font-semibold text-slate-800">{transactionData.length}</span> transactions loaded
                 </div>
               )}
+
+              {/* User Menu */}
+              <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
+                <div className="text-sm">
+                  <span className="text-slate-600">Welcome, </span>
+                  <span className="font-semibold text-slate-800">{user?.username}</span>
+                  <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                    isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {user?.role}
+                  </span>
+                </div>
+                {isAdmin && (
+                  <button
+                    onClick={() => setActivePhase('users')}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      activePhase === 'users'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    Users
+                  </button>
+                )}
+                <button
+                  onClick={logout}
+                  className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-all"
+                >
+                  Logout
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -140,16 +176,16 @@ function App() {
               <div className="bg-white rounded-2xl shadow-xl p-12 max-w-md text-center">
                 <div className="text-6xl mb-6">💰</div>
                 <h2 className="text-2xl font-bold text-slate-800 mb-3">
-                  Transaction Data Gerekli
+                  Transaction Data Required
                 </h2>
                 <p className="text-slate-600 mb-6">
-                  Karlılık Analizi için önce Transaction Analyzer'dan Excel dosyalarınızı yükleyin.
+                  Please upload your Excel files from Transaction Analyzer for Profitability Analysis.
                 </p>
                 <button
                   onClick={() => setActivePhase('transaction')}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold"
                 >
-                  Transaction Analyzer'a Git
+                  Go to Transaction Analyzer
                 </button>
               </div>
             </div>
@@ -168,28 +204,37 @@ function App() {
               <div className="bg-white rounded-2xl shadow-xl p-12 max-w-md text-center">
                 <div className="text-6xl mb-6">📈</div>
                 <h2 className="text-2xl font-bold text-slate-800 mb-3">
-                  Transaction Data Gerekli
+                  Transaction Data Required
                 </h2>
                 <p className="text-slate-600 mb-6">
-                  Trend Analizi için önce Transaction Analyzer'dan Excel dosyalarınızı yükleyin.
+                  Please upload your Excel files from Transaction Analyzer for Trend Analysis.
                 </p>
                 <button
                   onClick={() => setActivePhase('transaction')}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold"
                 >
-                  Transaction Analyzer'a Git
+                  Go to Transaction Analyzer
                 </button>
               </div>
             </div>
           )}
         </div>
+
+        {/* User Management - Admin Only */}
+        {isAdmin && (
+          <div style={{ display: activePhase === 'users' ? 'block' : 'none' }}>
+            <Suspense fallback={<LoadingFallback />}>
+              <UserManagement />
+            </Suspense>
+          </div>
+        )}
       </main>
 
       {/* Test Panel - Only in Development Mode */}
       {process.env.NODE_ENV === 'development' && (
         <Suspense fallback={null}>
           <TestPanel onLoadTestData={(marketplace, data) => {
-            console.log(`🧪 Loading test data for ${marketplace}`);
+            console.log(`Loading test data for ${marketplace}`);
             setTransactionData(data);
             setActivePhase('transaction');
           }} />
@@ -199,4 +244,28 @@ function App() {
   );
 }
 
-export default App;
+// App wrapper with AuthProvider
+function App() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <LoadingFallback />;
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  return <AppContent />;
+}
+
+// Root component with AuthProvider
+function Root() {
+  return (
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  );
+}
+
+export default Root;
