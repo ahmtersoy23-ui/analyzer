@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Upload, FileSpreadsheet, Package, RefreshCw, AlertCircle, Save, Database, Trash2, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from './ui/Toast';
 import * as DB from '../utils/transactionStorage';
 import { exportTransactionsToExcel } from '../utils/excelExport';
 import { getMarketplaceCurrency, CURRENCY_SYMBOLS } from '../utils/currencyExchange';
@@ -85,6 +86,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   onDataLoaded
 }) => {
   const { isAdmin } = useAuth();
+  const toast = useToast();
 
   // Load saved filters from localStorage (only on initial mount)
   const loadSavedFilters = (): TransactionSavedFilters => {
@@ -428,7 +430,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
 
               // EMERGENCY: Prevent loading very large datasets all at once
               if (allTransactions.length > 200000) {
-                alert(`⚠️ Very large dataset detected (${allTransactions.length} transactions).\n\nTo prevent performance issues, please select a specific country (marketplace) from above.\n\nSuch large data cannot be processed in All mode.`);
+                toast.warning(`Very large dataset (${allTransactions.length.toLocaleString()} transactions). Please select a specific marketplace.`, 6000);
 
                 // Still set the data but user must select a marketplace
                 setAllData(allTransactions);
@@ -484,7 +486,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
 
             // EMERGENCY: Prevent loading very large datasets all at once
             if (allTransactions.length > 200000) {
-              alert(`⚠️ Very large dataset detected (${allTransactions.length} transactions).\n\nTo prevent performance issues, please select a specific country (marketplace) from above.\n\nSuch large data cannot be processed in All mode.`);
+              toast.warning(`Very large dataset (${allTransactions.length.toLocaleString()} transactions). Please select a specific marketplace.`, 6000);
 
               // Still set the data but user must select a marketplace
               setAllData(allTransactions);
@@ -904,15 +906,15 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                         setAllData([]);
                         setStoredFiles([]);
 
-                        window.alert('All data cleared! Page will reload...');
+                        toast.success('All data cleared! Reloading...');
 
                         // Force hard reload to clear any cached state
-                        window.location.href = window.location.href;
+                        setTimeout(() => { window.location.href = window.location.href; }, 500);
                       } catch (err) {
                         console.error('Clear error:', err);
                         // Even if there's an error, try to reload
-                        window.alert('Some data could not be cleared, page will reload...');
-                        window.location.href = window.location.href;
+                        toast.error('Some data could not be cleared. Reloading...');
+                        setTimeout(() => { window.location.href = window.location.href; }, 500);
                       }
                     }
                   }}
@@ -1067,7 +1069,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
           {validationWarnings.length > 0 && (
             <div className="mt-4 space-y-2">
               {validationWarnings.map((warning, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-yellow-600 bg-yellow-50 p-3 rounded-lg text-sm">
+                <div key={idx} className="flex items-center gap-2 text-yellow-700 bg-yellow-50 p-3 rounded-lg text-sm">
                   <AlertCircle className="w-4 h-4" />
                   <span>{warning}</span>
                 </div>

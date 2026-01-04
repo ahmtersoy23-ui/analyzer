@@ -96,7 +96,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                   ? formatMoney(product.totalQuantity > 0 ? product.netProfit / product.totalQuantity : 0)
                   : formatMoney(product.netProfit)}
               </td>
-              <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${product.profitMargin >= 10 ? 'text-green-600' : product.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+              <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${product.profitMargin >= 10 ? 'text-green-600' : product.profitMargin >= 0 ? 'text-yellow-700' : 'text-red-600'}`}>
                 {formatPercent(product.profitMargin)}
               </td>
               <td className="px-3 py-2 text-right text-slate-600">{product.totalOrders}</td>

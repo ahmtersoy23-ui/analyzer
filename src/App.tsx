@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import './App.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider } from './components/ui/Toast';
 import LoginPage from './components/LoginPage';
 import TransactionAnalyzer from './components/TransactionAnalyzer';
 import type { TransactionData, MarketplaceCode } from './types/transaction';
@@ -265,11 +266,13 @@ function App() {
   return <AppContent />;
 }
 
-// Root component with AuthProvider
+// Root component with AuthProvider and ToastProvider
 function Root() {
   return (
     <AuthProvider>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </AuthProvider>
   );
 }

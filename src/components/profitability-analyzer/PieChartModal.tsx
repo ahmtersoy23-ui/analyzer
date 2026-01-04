@@ -318,7 +318,7 @@ const PieChartModal: React.FC<PieChartModalProps> = ({
               <div className="text-[10px] text-slate-500">{isPerUnit ? 'Profit/Unit' : 'Net Profit'}</div>
             </div>
             <div className={`rounded-lg p-2 text-center ${selectedItem.data.profitMargin >= 10 ? 'bg-green-50' : selectedItem.data.profitMargin >= 0 ? 'bg-yellow-50' : 'bg-red-50'}`}>
-              <div className={`text-lg font-bold ${selectedItem.data.profitMargin >= 10 ? 'text-green-600' : selectedItem.data.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+              <div className={`text-lg font-bold ${selectedItem.data.profitMargin >= 10 ? 'text-green-600' : selectedItem.data.profitMargin >= 0 ? 'text-yellow-700' : 'text-red-600'}`}>
                 {formatPercent(selectedItem.data.profitMargin)}
               </div>
               <div className="text-[10px] text-slate-500">Margin</div>

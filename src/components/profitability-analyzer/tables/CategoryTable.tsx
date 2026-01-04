@@ -197,7 +197,7 @@ export const CategoryTable: React.FC<CategoryTableProps> = ({
           <td className={`px-3 py-3 text-right font-bold bg-green-50/30 whitespace-nowrap text-sm ${totals.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
             {formatMoney(totals.netProfit)}
           </td>
-          <td className={`px-3 py-3 text-right font-bold bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${allProfitMargin >= 10 ? 'text-green-600' : allProfitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+          <td className={`px-3 py-3 text-right font-bold bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${allProfitMargin >= 10 ? 'text-green-600' : allProfitMargin >= 0 ? 'text-yellow-700' : 'text-red-600'}`}>
             {formatPercent(allProfitMargin)}
           </td>
           <td className="px-3 py-3 text-right text-slate-600">{totals.totalOrders}</td>
@@ -318,7 +318,7 @@ export const CategoryTable: React.FC<CategoryTableProps> = ({
             <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${cat.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatMoney(cat.netProfit)}
             </td>
-            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${cat.profitMargin >= 10 ? 'text-green-600' : cat.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${cat.profitMargin >= 10 ? 'text-green-600' : cat.profitMargin >= 0 ? 'text-yellow-700' : 'text-red-600'}`}>
               {formatPercent(cat.profitMargin)}
             </td>
             <td className="px-3 py-2 text-right text-slate-600">{cat.totalOrders}</td>

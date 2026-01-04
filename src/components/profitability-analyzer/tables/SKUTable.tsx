@@ -131,7 +131,7 @@ export const SKUTable: React.FC<SKUTableProps> = ({
                 ? formatMoney(sku.totalQuantity > 0 ? sku.netProfit / sku.totalQuantity : 0)
                 : formatMoney(sku.netProfit)}
             </td>
-            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${sku.profitMargin >= 10 ? 'text-green-600' : sku.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${sku.profitMargin >= 10 ? 'text-green-600' : sku.profitMargin >= 0 ? 'text-yellow-700' : 'text-red-600'}`}>
               {formatPercent(sku.profitMargin)}
             </td>
             <td className="px-3 py-2 text-right text-slate-600">{sku.totalOrders}</td>

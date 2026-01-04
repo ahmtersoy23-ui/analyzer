@@ -565,7 +565,7 @@ export const CategoryCardsSection: React.FC<CategoryCardsSectionProps> = React.m
               <span className={`font-semibold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {formatMoney(totalProfit)}
               </span>
-              <span className={`font-medium ${avgMargin >= 10 ? 'text-green-600' : avgMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+              <span className={`font-medium ${avgMargin >= 10 ? 'text-green-600' : avgMargin >= 0 ? 'text-yellow-700' : 'text-red-600'}`}>
                 {formatPercent(avgMargin)}
               </span>
             </div>
@@ -730,7 +730,7 @@ export const CategoryCardsSection: React.FC<CategoryCardsSectionProps> = React.m
               </div>
               <div className="flex justify-between items-center text-xs">
                 <span className="text-indigo-700 font-medium">Margin</span>
-                <span className={`font-bold ${avgMargin >= 10 ? 'text-green-600' : avgMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                <span className={`font-bold ${avgMargin >= 10 ? 'text-green-600' : avgMargin >= 0 ? 'text-yellow-700' : 'text-red-600'}`}>
                   {formatPercent(avgMargin)}
                 </span>
               </div>
@@ -976,7 +976,7 @@ export const CategoryCardsSection: React.FC<CategoryCardsSectionProps> = React.m
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-700 font-medium">Margin</span>
-                    <span className={`font-bold ${!cat.hasCostData ? 'text-slate-400' : cat.profitMargin >= 10 ? 'text-green-600' : cat.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                    <span className={`font-bold ${!cat.hasCostData ? 'text-slate-400' : cat.profitMargin >= 10 ? 'text-green-600' : cat.profitMargin >= 0 ? 'text-yellow-700' : 'text-red-600'}`}>
                       {cat.hasCostData ? formatPercent(cat.profitMargin) : '-'}
                     </span>
                   </div>

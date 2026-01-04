@@ -5,6 +5,7 @@
 import React, { useRef, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { ProductCostData, CostDataSummary, FBMSourceOverride } from '../../types/profitability';
+import { useToast } from '../ui/Toast';
 
 // NAME bazlı Override - bir NAME altındaki tüm FBM SKU'lara uygulanır
 export interface NameOverride {
@@ -61,6 +62,7 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showOverrideEditor, setShowOverrideEditor] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const toast = useToast();
 
   // Manuel NAME ekleme state'leri (NAME bazlı override sistemi)
   const [manualNameInput, setManualNameInput] = useState('');
@@ -75,7 +77,7 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
     const validExtensions = ['.xlsx', '.xls', '.csv'];
     const fileExt = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
     if (!validExtensions.includes(fileExt)) {
-      alert(`Geçersiz dosya formatı: ${fileExt}\n\nDesteklenen formatlar: Excel (.xlsx, .xls) veya CSV (.csv)`);
+      toast.error(`Invalid format: ${fileExt}. Use Excel (.xlsx, .xls) or CSV.`);
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -91,7 +93,7 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
 
         // Validate data structure - must have SKU column
         if (jsonData.length === 0) {
-          alert('Dosya boş veya okunamadı.');
+          toast.error('File is empty or could not be read.');
           return;
         }
 
@@ -101,21 +103,21 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
         );
 
         if (!hasSkuColumn) {
-          const columns = Object.keys(firstRow).slice(0, 5).join(', ');
-          alert(`Geçersiz dosya formatı!\n\nBu dosyada SKU sütunu bulunamadı.\nBulunan sütunlar: ${columns}...\n\nDoğru maliyet dosyası yüklediğinizden emin olun.`);
+          toast.error('Invalid format: No SKU column found. Please upload a valid cost file.');
           return;
         }
 
         onFileUpload(jsonData as Record<string, any>[]);
+        toast.success(`Cost data loaded: ${jsonData.length} rows`);
       } catch (error) {
         console.error('File parse error:', error);
-        alert(`Dosya işlenirken hata oluştu:\n${error instanceof Error ? error.message : 'Bilinmeyen hata'}\n\nDoğru formatta bir Excel dosyası yüklediğinizden emin olun.`);
+        toast.error(`Error processing file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     };
 
     reader.onerror = () => {
       console.error('File read error:', reader.error);
-      alert('Dosya okunamadı. Lütfen tekrar deneyin.');
+      toast.error('Could not read file. Please try again.');
     };
 
     reader.readAsArrayBuffer(file);
@@ -239,7 +241,7 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
 
     // En az bir değer girilmiş olmalı
     if (customShipping === null && fbmSource === null) {
-      alert('Lütfen en az bir değer girin (Custom Shipping veya FBM Source)');
+      toast.warning('Please enter at least one value (Custom Shipping or FBM Source)');
       return;
     }
 
@@ -735,7 +737,7 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
                     </span>
                   ))}
                   {costSummary.missingCost.length > 50 && (
-                    <span className="text-xs text-yellow-600">
+                    <span className="text-xs text-yellow-700">
                       +{costSummary.missingCost.length - 50} daha...
                     </span>
                   )}
@@ -760,7 +762,7 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
                     </span>
                   ))}
                   {costSummary.missingSize.length > 50 && (
-                    <span className="text-xs text-yellow-600">
+                    <span className="text-xs text-yellow-700">
                       +{costSummary.missingSize.length - 50} daha...
                     </span>
                   )}

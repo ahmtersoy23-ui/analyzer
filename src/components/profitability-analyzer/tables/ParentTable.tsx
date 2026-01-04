@@ -73,7 +73,7 @@ export const ParentTable: React.FC<ParentTableProps> = ({
             <td className={`px-3 py-2 text-right font-bold bg-green-50/30 whitespace-nowrap ${par.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatMoney(par.netProfit)}
             </td>
-            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${par.profitMargin >= 10 ? 'text-green-600' : par.profitMargin >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+            <td className={`px-3 py-2 text-right font-medium bg-green-50/30 border-r border-slate-100 whitespace-nowrap ${par.profitMargin >= 10 ? 'text-green-600' : par.profitMargin >= 0 ? 'text-yellow-700' : 'text-red-600'}`}>
               {formatPercent(par.profitMargin)}
             </td>
             <td className="px-3 py-2 text-right text-slate-600">{par.totalOrders}</td>
