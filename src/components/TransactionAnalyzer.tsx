@@ -1477,8 +1477,8 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                     <Package className="w-5 h-5 text-white" />
                   </div>
                   <div className="text-left">
-                    <h3 className="font-semibold text-slate-800">Detaylı Gider Kırılımları</h3>
-                    <p className="text-xs text-slate-600">Fee detayları, adjustment'lar ve daha fazlası</p>
+                    <h3 className="font-semibold text-slate-800">Detailed Fee Breakdown</h3>
+                    <p className="text-xs text-slate-600">Fee details, adjustments, and more</p>
                   </div>
                 </div>
                 {showDetailedBreakdown ? (
