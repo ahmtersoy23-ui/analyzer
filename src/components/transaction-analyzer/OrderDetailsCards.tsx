@@ -21,7 +21,7 @@ export const OrderDetailsCards: React.FC<OrderDetailsCardsProps> = ({
       {/* FBA Order Details */}
       {(selectedFulfillment === 'all' || selectedFulfillment === 'FBA') && analytics.fbaOrders > 0 && (
         <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
-          <h3 className="text-lg font-semibold text-slate-800 mb-4">FBA Order Detayları</h3>
+          <h3 className="text-lg font-semibold text-slate-800 mb-4">FBA Order Details</h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-slate-700">Product Sales</span>
