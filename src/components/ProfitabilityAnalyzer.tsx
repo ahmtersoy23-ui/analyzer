@@ -56,6 +56,7 @@ import type { SelectedItemType } from './profitability-analyzer/PieChartModal';
 
 // Context
 import { ProfitabilityFilterProvider, useProfitabilityFilters } from '../contexts/ProfitabilityFilterContext';
+import { useAuth } from '../contexts/AuthContext';
 
 // Lazy load heavy tab components and modal
 const CostUploadTab = lazy(() => import('./profitability-analyzer/CostUploadTab'));
@@ -109,6 +110,8 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   transactionData,
   selectedMarketplace,
 }) => {
+  const { isAdmin } = useAuth();
+
   // ============================================
   // FILTER STATES FROM CONTEXT
   // ============================================
@@ -1461,65 +1464,67 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
               </p>
             </div>
 
-            {/* Config Buttons */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setShowCostData(!showCostData);
-                  setShowShippingRates(false);
-                  setShowCountrySettings(false);
-                }}
-                className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
-                  showCostData
-                    ? 'bg-green-600 text-white'
-                    : totalNames > 0
-                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <DollarSign className="w-4 h-4" />
-                <span className="text-sm font-medium">Data</span>
-                {showCostData ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </button>
+            {/* Config Buttons - Admin Only */}
+            {isAdmin && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setShowCostData(!showCostData);
+                    setShowShippingRates(false);
+                    setShowCountrySettings(false);
+                  }}
+                  className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
+                    showCostData
+                      ? 'bg-green-600 text-white'
+                      : totalNames > 0
+                      ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <DollarSign className="w-4 h-4" />
+                  <span className="text-sm font-medium">Data</span>
+                  {showCostData ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
 
-              <button
-                onClick={() => {
-                  setShowShippingRates(!showShippingRates);
-                  setShowCostData(false);
-                  setShowCountrySettings(false);
-                }}
-                className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
-                  showShippingRates
-                    ? 'bg-blue-600 text-white'
-                    : shippingRates && shippingRates.routes['US-TR'].rates.length > 0
-                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <Truck className="w-4 h-4" />
-                <span className="text-sm font-medium">Shipping</span>
-                {showShippingRates ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </button>
+                <button
+                  onClick={() => {
+                    setShowShippingRates(!showShippingRates);
+                    setShowCostData(false);
+                    setShowCountrySettings(false);
+                  }}
+                  className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
+                    showShippingRates
+                      ? 'bg-blue-600 text-white'
+                      : shippingRates && shippingRates.routes['US-TR'].rates.length > 0
+                      ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <Truck className="w-4 h-4" />
+                  <span className="text-sm font-medium">Shipping</span>
+                  {showShippingRates ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
 
-              <button
-                onClick={() => {
-                  setShowCountrySettings(!showCountrySettings);
-                  setShowCostData(false);
-                  setShowShippingRates(false);
-                }}
-                className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
-                  showCountrySettings
-                    ? 'bg-orange-600 text-white'
-                    : countryConfigs
-                    ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <Settings className="w-4 h-4" />
-                <span className="text-sm font-medium">Settings</span>
-                {showCountrySettings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </button>
-            </div>
+                <button
+                  onClick={() => {
+                    setShowCountrySettings(!showCountrySettings);
+                    setShowCostData(false);
+                    setShowShippingRates(false);
+                  }}
+                  className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
+                    showCountrySettings
+                      ? 'bg-orange-600 text-white'
+                      : countryConfigs
+                      ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <Settings className="w-4 h-4" />
+                  <span className="text-sm font-medium">Settings</span>
+                  {showCountrySettings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Collapsible Sections - Lazy loaded */}

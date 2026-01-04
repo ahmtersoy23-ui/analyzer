@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Upload, FileSpreadsheet, Package, RefreshCw, AlertCircle, Save, Database, Trash2, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import * as DB from '../utils/transactionStorage';
 import { exportTransactionsToExcel } from '../utils/excelExport';
 import { getMarketplaceCurrency, CURRENCY_SYMBOLS } from '../utils/currencyExchange';
@@ -83,6 +84,8 @@ const convertApiToTransactionData = (apiData: TransactionApiData[]): Transaction
 const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   onDataLoaded
 }) => {
+  const { isAdmin } = useAuth();
+
   // Load saved filters from localStorage (only on initial mount)
   const loadSavedFilters = (): TransactionSavedFilters => {
     try {
@@ -841,16 +844,18 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
             <div className="flex flex-col gap-2">
               {/* First Row: Upload, Stored, Refresh, Clear */}
               <div className="flex items-center gap-2 justify-end">
-                {/* File Upload Toggle */}
-                <button
-                  onClick={() => setShowFileUpload(!showFileUpload)}
-                  className="flex items-center justify-center gap-2 px-4 py-2 min-w-[120px] bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                  title="Upload Excel files"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span className="text-sm font-medium">Upload</span>
-                  {showFileUpload ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
+                {/* File Upload Toggle - Admin Only */}
+                {isAdmin && (
+                  <button
+                    onClick={() => setShowFileUpload(!showFileUpload)}
+                    className="flex items-center justify-center gap-2 px-4 py-2 min-w-[120px] bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                    title="Upload Excel files"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span className="text-sm font-medium">Upload</span>
+                    {showFileUpload ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                )}
 
                 {/* Stored Marketplaces Toggle */}
                 {storedFiles.length > 0 && (
@@ -865,62 +870,64 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                   </button>
                 )}
 
-              {/* Clear All Data */}
-              <button
-                onClick={async () => {
-                  if (window.confirm('⚠️ All data will be deleted! Are you sure?\n\n- All transactions (IndexedDB)\n- Product mapping cache (localStorage)\n- Page will reload')) {
-                    try {
-                      // First close any existing DB connections
-                      await DB.clearAllData();
+              {/* Clear All Data - Admin Only */}
+              {isAdmin && (
+                <button
+                  onClick={async () => {
+                    if (window.confirm('⚠️ All data will be deleted! Are you sure?\n\n- All transactions (IndexedDB)\n- Product mapping cache (localStorage)\n- Page will reload')) {
+                      try {
+                        // First close any existing DB connections
+                        await DB.clearAllData();
 
-                      // Delete the entire database using Promise wrapper
-                      await new Promise<void>((resolve, reject) => {
-                        const deleteRequest = indexedDB.deleteDatabase('AmazonAnalyzerDB');
-                        deleteRequest.onsuccess = () => {
-                          console.log('✅ Database deleted successfully');
-                          resolve();
-                        };
-                        deleteRequest.onerror = () => {
-                          console.log('❌ Database delete error');
-                          reject(new Error('Failed to delete database'));
-                        };
-                        deleteRequest.onblocked = () => {
-                          console.log('⚠️ Database delete blocked - forcing reload');
-                          resolve(); // Continue anyway
-                        };
-                      });
+                        // Delete the entire database using Promise wrapper
+                        await new Promise<void>((resolve, reject) => {
+                          const deleteRequest = indexedDB.deleteDatabase('AmazonAnalyzerDB');
+                          deleteRequest.onsuccess = () => {
+                            console.log('Database deleted successfully');
+                            resolve();
+                          };
+                          deleteRequest.onerror = () => {
+                            console.log('Database delete error');
+                            reject(new Error('Failed to delete database'));
+                          };
+                          deleteRequest.onblocked = () => {
+                            console.log('Database delete blocked - forcing reload');
+                            resolve(); // Continue anyway
+                          };
+                        });
 
-                      // Clear ALL localStorage items related to the app
-                      localStorage.removeItem('productMapping_cache');
-                      localStorage.removeItem('productMapping_timestamp');
-                      localStorage.removeItem('profitability_filters');
-                      localStorage.removeItem('amazonAnalyzerFilters');
-                      // IMPORTANT: Clear auto-backup to prevent restore on reload
-                      localStorage.removeItem('amazonAnalyzerAutoBackup');
-                      localStorage.removeItem('amazonAnalyzerLastBackup');
+                        // Clear ALL localStorage items related to the app
+                        localStorage.removeItem('productMapping_cache');
+                        localStorage.removeItem('productMapping_timestamp');
+                        localStorage.removeItem('profitability_filters');
+                        localStorage.removeItem('amazonAnalyzerFilters');
+                        // IMPORTANT: Clear auto-backup to prevent restore on reload
+                        localStorage.removeItem('amazonAnalyzerAutoBackup');
+                        localStorage.removeItem('amazonAnalyzerLastBackup');
 
-                      // Also clear React state before reload
-                      setAllData([]);
-                      setStoredFiles([]);
+                        // Also clear React state before reload
+                        setAllData([]);
+                        setStoredFiles([]);
 
-                      window.alert('✅ All data cleared! Page will reload...');
+                        window.alert('All data cleared! Page will reload...');
 
-                      // Force hard reload to clear any cached state
-                      window.location.href = window.location.href;
-                    } catch (err) {
-                      console.error('Clear error:', err);
-                      // Even if there's an error, try to reload
-                      window.alert('⚠️ Some data could not be cleared, page will reload...');
-                      window.location.href = window.location.href;
+                        // Force hard reload to clear any cached state
+                        window.location.href = window.location.href;
+                      } catch (err) {
+                        console.error('Clear error:', err);
+                        // Even if there's an error, try to reload
+                        window.alert('Some data could not be cleared, page will reload...');
+                        window.location.href = window.location.href;
+                      }
                     }
-                  }
-                }}
-                className="flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                title="Clear all data (IndexedDB + Cache)"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span className="text-sm font-medium">Clear</span>
-              </button>
+                  }}
+                  className="flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                  title="Clear all data (IndexedDB + Cache)"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span className="text-sm font-medium">Clear</span>
+                </button>
+              )}
               </div>
 
               {/* Second Row: PDF, Excel, Advanced - Only show when data exists */}
@@ -1018,13 +1025,15 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                             </span>
                           </div>
                         </div>
-                        <button
-                          onClick={() => removeMarketplace(stored.marketplace)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Delete this marketplace"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => removeMarketplace(stored.marketplace)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete this marketplace"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
 
                       <div className="space-y-2 mt-4">
