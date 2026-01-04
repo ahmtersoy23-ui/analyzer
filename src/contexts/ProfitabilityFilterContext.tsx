@@ -160,7 +160,7 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
       endDate,
       filterMarketplace,
       filterFulfillment,
-      selectedMarketplaces: Array.from(selectedMarketplaces)
+      selectedMarketplaces: Array.from(selectedMarketplaces),
     });
   }, [startDate, endDate, filterMarketplace, filterFulfillment, selectedMarketplaces]);
 

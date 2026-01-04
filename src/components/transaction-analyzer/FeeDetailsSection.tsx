@@ -58,13 +58,18 @@ const FeeGroupCard: React.FC<{
       </div>
       <div className="space-y-3">
         {Object.entries(groups)
-          .sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total))
+          .sort((a, b) => {
+            // Miscellaneous always at the end
+            if (a[0] === 'Miscellaneous') return 1;
+            if (b[0] === 'Miscellaneous') return -1;
+            return Math.abs(b[1].total) - Math.abs(a[1].total);
+          })
           .map(([key, value]) => (
-            <div key={key} className="flex items-center justify-between">
-              <span className="text-sm text-slate-700">
+            <div key={key} className="flex items-start justify-between gap-4">
+              <span className="text-sm text-slate-700 text-left flex-1">
                 {translateKeys ? translateDescription(key) : key}
               </span>
-              <span className="text-sm font-semibold text-slate-800">
+              <span className="text-sm font-semibold text-slate-800 text-right whitespace-nowrap">
                 {formatMoney(value.total)} <span className="text-slate-500">({value.count} işlem)</span>
               </span>
             </div>
@@ -166,6 +171,15 @@ export const FeeDetailsSection: React.FC<FeeDetailsSectionProps> = ({
         <FeeGroupCard
           title="Amazon Fees Detayları"
           groups={analytics.amazonFeesGroups}
+          formatMoney={formatMoney}
+        />
+      )}
+
+      {/* Shipping Services Details */}
+      {analytics.shippingServicesGroups && Object.keys(analytics.shippingServicesGroups).length > 0 && (
+        <FeeGroupCard
+          title="Shipping Services Detayları"
+          groups={analytics.shippingServicesGroups}
           formatMoney={formatMoney}
         />
       )}

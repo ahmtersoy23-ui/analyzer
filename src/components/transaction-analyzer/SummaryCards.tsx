@@ -45,14 +45,14 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
       {/* Total Sales */}
       <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl shadow-md p-6 border border-green-100 print:p-2 print:shadow-none print:border print:border-slate-200">
         <div className="flex items-center justify-between mb-3 print:mb-1">
-          <span className="text-base font-semibold text-green-800 print:text-xs print:text-slate-700">Toplam Satış</span>
+          <span className="text-base font-semibold text-green-800 print:text-xs print:text-slate-700">Total Sales</span>
           <DollarSign className="w-6 h-6 text-green-600 print:hidden" />
         </div>
         <p className="text-3xl font-bold text-green-900 mb-2 print:text-base print:font-semibold print:mb-0">
           {formatMoney(analytics.totalSales)}
         </p>
         <div className="flex items-center justify-between">
-          <p className="text-sm text-green-700 print:text-[10px]">{analytics.totalOrders} sipariş</p>
+          <p className="text-sm text-green-700 print:text-[10px]">{analytics.totalOrders} orders</p>
           {comparisonAnalytics && (
             <ComparisonBadge
               current={analytics.totalSales}
@@ -66,7 +66,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
       {selectedFulfillment === 'all' && (
         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-md p-6 border border-blue-100 print:p-2 print:shadow-none print:border print:border-slate-200">
           <div className="flex items-center justify-between mb-3 print:mb-1">
-            <span className="text-base font-semibold text-blue-800 print:text-xs print:text-slate-700">Net Gelir</span>
+            <span className="text-base font-semibold text-blue-800 print:text-xs print:text-slate-700">Net Income</span>
             <TrendingUp className="w-6 h-6 text-blue-600 print:hidden" />
           </div>
           <p className="text-3xl font-bold text-blue-900 mb-2 print:text-base print:font-semibold print:mb-0">

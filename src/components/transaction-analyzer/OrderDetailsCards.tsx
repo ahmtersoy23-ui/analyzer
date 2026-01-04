@@ -50,7 +50,7 @@ export const OrderDetailsCards: React.FC<OrderDetailsCardsProps> = ({
               </div>
             </div>
             <div className="mt-2 text-xs text-slate-500">
-              {analytics.fbaOrders} FBA sipariş
+              {analytics.fbaOrders} FBA orders
             </div>
           </div>
         </div>
@@ -59,7 +59,7 @@ export const OrderDetailsCards: React.FC<OrderDetailsCardsProps> = ({
       {/* FBM Order Details */}
       {(selectedFulfillment === 'all' || selectedFulfillment === 'FBM') && analytics.fbmOrders > 0 && (
         <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
-          <h3 className="text-lg font-semibold text-slate-800 mb-4">FBM Order Detayları</h3>
+          <h3 className="text-lg font-semibold text-slate-800 mb-4">FBM Order Details</h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-slate-700">Product Sales</span>
@@ -82,7 +82,7 @@ export const OrderDetailsCards: React.FC<OrderDetailsCardsProps> = ({
               </div>
             </div>
             <div className="mt-2 text-xs text-slate-500">
-              {analytics.fbmOrders} FBM sipariş
+              {analytics.fbmOrders} FBM orders
             </div>
           </div>
         </div>

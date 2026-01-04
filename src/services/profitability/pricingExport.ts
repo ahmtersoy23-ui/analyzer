@@ -608,6 +608,69 @@ export interface AmazonExpenseEntry {
 }
 
 /**
+ * Category-based Amazon Expenses entry
+ * Includes margin and ROI calculations
+ */
+export interface CategoryExpenseEntry {
+  // Amazon fee percentages
+  sellingFeePercent: number;
+  fbaFeePercent: number;
+  advertisingPercent: number;
+  refundLossPercent: number;
+
+  // Profitability metrics
+  marginPercent: number;      // Net profit margin %
+  roiPercent: number;         // ROI based on investment (product cost + shipping)
+
+  // Stats for reference
+  sampleSize: number;         // Number of orders/transactions
+  totalRevenue: number;
+  totalCost: number;          // Product cost + shipping cost (investment)
+  totalProfit: number;
+}
+
+/**
+ * Fulfillment type expenses with category breakdown
+ */
+export interface FulfillmentExpenses {
+  // Overall stats for this fulfillment type
+  totalRevenue: number;
+  totalOrders: number;
+
+  // Category breakdown
+  categories: {
+    [category: string]: CategoryExpenseEntry;
+  };
+}
+
+/**
+ * Amazon Expenses export structure V2
+ * Organized by marketplace -> fulfillment type -> category
+ */
+export interface AmazonExpensesExportV2 {
+  version: 2;
+  exportedAt: string;
+  sourceApp: 'amazon-analyzer';
+  period: {
+    start: string;
+    end: string;
+  };
+  marketplaces: {
+    [marketplaceCode: string]: {
+      FBA?: FulfillmentExpenses;
+      FBM?: FulfillmentExpenses;
+      'FBM-US'?: FulfillmentExpenses;  // US-only: Local warehouse FBM
+    };
+  };
+  summary: {
+    totalMarketplaces: number;
+    totalCategories: number;
+    totalRevenue: number;
+    totalOrders: number;
+  };
+}
+
+/**
  * Amazon Expenses export structure
  * Organized by marketplace -> fulfillment type
  */
@@ -786,7 +849,7 @@ export const downloadAmazonExpensesJson = (data: AmazonExpensesExport): void => 
 };
 
 /**
- * Export Amazon Expenses for PriceLab
+ * Export Amazon Expenses for PriceLab (legacy V1)
  * Main entry point for the export functionality
  */
 export const exportAmazonExpensesForPriceLab = (
@@ -795,5 +858,184 @@ export const exportAmazonExpensesForPriceLab = (
 ): AmazonExpensesExport => {
   const data = calculateAmazonExpenses(skuProfitability, dateRange);
   downloadAmazonExpensesJson(data);
+  return data;
+};
+
+// ============================================
+// AMAZON EXPENSES V2 - CATEGORY BASED
+// ============================================
+
+/**
+ * Calculate category-based Amazon expenses with margin and ROI
+ * Groups by marketplace -> fulfillment -> category
+ */
+export const calculateAmazonExpensesV2 = (
+  skuProfitability: SKUProfitAnalysis[],
+  dateRange: { start: Date; end: Date }
+): AmazonExpensesExportV2 => {
+  // Structure: marketplace -> fulfillment -> category -> SKUs
+  const dataMap = new Map<string, Map<string, Map<string, SKUProfitAnalysis[]>>>();
+
+  skuProfitability.forEach(sku => {
+    const mp = (sku as any).marketplace as string;
+    const category = (sku as any).category as string || 'Unknown';
+    if (!mp) return;
+
+    // Determine fulfillment type
+    let fulfillment: string;
+    if (sku.fulfillment === 'FBA') {
+      fulfillment = 'FBA';
+    } else if (sku.fulfillment === 'FBM') {
+      // For US, check if it's FBM-US (local) or FBM (from Turkey)
+      if (mp === 'US') {
+        const hasCustoms = (sku.customsDuty || 0) > 0 || (sku.ddpFee || 0) > 0;
+        fulfillment = hasCustoms ? 'FBM' : 'FBM-US';
+      } else {
+        fulfillment = 'FBM';
+      }
+    } else {
+      // Mixed - count as FBA for simplicity
+      fulfillment = 'FBA';
+    }
+
+    // Initialize nested maps
+    if (!dataMap.has(mp)) {
+      dataMap.set(mp, new Map());
+    }
+    const mpMap = dataMap.get(mp)!;
+
+    if (!mpMap.has(fulfillment)) {
+      mpMap.set(fulfillment, new Map());
+    }
+    const fulfillmentMap = mpMap.get(fulfillment)!;
+
+    if (!fulfillmentMap.has(category)) {
+      fulfillmentMap.set(category, []);
+    }
+    fulfillmentMap.get(category)!.push(sku);
+  });
+
+  // Build export structure
+  const marketplaces: AmazonExpensesExportV2['marketplaces'] = {};
+  let totalRevenue = 0;
+  let totalOrders = 0;
+  const allCategories = new Set<string>();
+
+  const buildCategoryEntry = (skus: SKUProfitAnalysis[]): CategoryExpenseEntry => {
+    const revenue = skus.reduce((sum, s) => sum + s.totalRevenue, 0);
+    const orders = skus.reduce((sum, s) => sum + s.totalOrders, 0);
+    const sellingFees = skus.reduce((sum, s) => sum + s.sellingFees, 0);
+    const fbaFees = skus.reduce((sum, s) => sum + s.fbaFees, 0);
+    const advertisingCost = skus.reduce((sum, s) => sum + s.advertisingCost, 0);
+    const refundLoss = skus.reduce((sum, s) => sum + s.refundLoss, 0);
+    const netProfit = skus.reduce((sum, s) => sum + s.netProfit, 0);
+
+    // Investment = product cost + shipping cost
+    const productCost = skus.reduce((sum, s) => sum + s.totalProductCost, 0);
+    const shippingCost = skus.reduce((sum, s) => sum + s.shippingCost, 0);
+    const investment = productCost + shippingCost;
+
+    // Calculate percentages
+    const sellingFeePercent = revenue > 0 ? (sellingFees / revenue) * 100 : 0;
+    const fbaFeePercent = revenue > 0 ? (fbaFees / revenue) * 100 : 0;
+    const advertisingPercent = revenue > 0 ? (advertisingCost / revenue) * 100 : 0;
+    const refundLossPercent = revenue > 0 ? (refundLoss / revenue) * 100 : 0;
+    const marginPercent = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+    const roiPercent = investment > 0 ? (netProfit / investment) * 100 : 0;
+
+    return {
+      sellingFeePercent: Math.round(sellingFeePercent * 10) / 10,
+      fbaFeePercent: Math.round(fbaFeePercent * 10) / 10,
+      advertisingPercent: Math.round(advertisingPercent * 10) / 10,
+      refundLossPercent: Math.round(refundLossPercent * 10) / 10,
+      marginPercent: Math.round(marginPercent * 10) / 10,
+      roiPercent: Math.round(roiPercent * 10) / 10,
+      sampleSize: orders,
+      totalRevenue: Math.round(revenue * 100) / 100,
+      totalCost: Math.round(investment * 100) / 100,
+      totalProfit: Math.round(netProfit * 100) / 100,
+    };
+  };
+
+  dataMap.forEach((mpMap, mp) => {
+    const mpEntry: AmazonExpensesExportV2['marketplaces'][string] = {};
+
+    mpMap.forEach((categoryMap, fulfillment) => {
+      const categories: FulfillmentExpenses['categories'] = {};
+      let fulfillmentRevenue = 0;
+      let fulfillmentOrders = 0;
+
+      categoryMap.forEach((skus, category) => {
+        allCategories.add(category);
+        const entry = buildCategoryEntry(skus);
+        categories[category] = entry;
+        fulfillmentRevenue += entry.totalRevenue;
+        fulfillmentOrders += entry.sampleSize;
+      });
+
+      if (Object.keys(categories).length > 0) {
+        (mpEntry as any)[fulfillment] = {
+          totalRevenue: Math.round(fulfillmentRevenue * 100) / 100,
+          totalOrders: fulfillmentOrders,
+          categories,
+        };
+        totalRevenue += fulfillmentRevenue;
+        totalOrders += fulfillmentOrders;
+      }
+    });
+
+    if (Object.keys(mpEntry).length > 0) {
+      marketplaces[mp] = mpEntry;
+    }
+  });
+
+  return {
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    sourceApp: 'amazon-analyzer',
+    period: {
+      start: dateRange.start.toISOString().split('T')[0],
+      end: dateRange.end.toISOString().split('T')[0],
+    },
+    marketplaces,
+    summary: {
+      totalMarketplaces: Object.keys(marketplaces).length,
+      totalCategories: allCategories.size,
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      totalOrders,
+    },
+  };
+};
+
+/**
+ * Download Amazon Expenses V2 as JSON file
+ */
+export const downloadAmazonExpensesJsonV2 = (data: AmazonExpensesExportV2): void => {
+  const jsonString = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonString], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  const date = new Date().toISOString().split('T')[0];
+  const filename = `amazon-expenses-v2-${date}.json`;
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Export Amazon Expenses V2 for PriceLab (category-based)
+ * Main entry point for the new export functionality
+ */
+export const exportAmazonExpensesV2ForPriceLab = (
+  skuProfitability: SKUProfitAnalysis[],
+  dateRange: { start: Date; end: Date }
+): AmazonExpensesExportV2 => {
+  const data = calculateAmazonExpensesV2(skuProfitability, dateRange);
+  downloadAmazonExpensesJsonV2(data);
   return data;
 };

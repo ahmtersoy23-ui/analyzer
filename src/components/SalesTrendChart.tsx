@@ -159,18 +159,18 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
     <div className="bg-white rounded-lg border border-slate-200 p-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-semibold text-slate-800">Satış Trendi</h3>
+          <h3 className="text-lg font-semibold text-slate-800">Sales Trend</h3>
 
           {/* Legend */}
           {comparisonChartData.length > 0 && (
             <div className="flex items-center gap-3 text-xs">
               <div className="flex items-center gap-1.5">
                 <div className="w-6 h-0.5 bg-blue-600 rounded"></div>
-                <span className="text-slate-600">Güncel</span>
+                <span className="text-slate-600">Current</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-6 h-0.5 bg-slate-400 rounded" style={{ backgroundImage: 'repeating-linear-gradient(to right, #94a3b8 0px, #94a3b8 6px, transparent 6px, transparent 10px)' }}></div>
-                <span className="text-slate-600">Önceki Dönem</span>
+                <span className="text-slate-600">Previous Period</span>
               </div>
             </div>
           )}
@@ -186,7 +186,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
               onClick={handlePrev}
               disabled={!canGoPrev}
               className={`p-1 rounded ${canGoPrev ? 'hover:bg-slate-100 text-slate-700' : 'text-slate-300 cursor-not-allowed'}`}
-              title="Önceki dönem"
+              title="Previous period"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -194,7 +194,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
               onClick={handleNext}
               disabled={!canGoNext}
               className={`p-1 rounded ${canGoNext ? 'hover:bg-slate-100 text-slate-700' : 'text-slate-300 cursor-not-allowed'}`}
-              title="Sonraki dönem"
+              title="Next period"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
@@ -204,19 +204,19 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
 
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="text-center p-3 bg-blue-50 rounded-lg">
-          <p className="text-sm text-slate-600 mb-1">Toplam Satış</p>
+          <p className="text-sm text-slate-600 mb-1">Total Sales</p>
           <p className="text-xl font-bold text-blue-600">
             {currency}{chartData.reduce((sum, d) => sum + d.sales, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </p>
         </div>
         <div className="text-center p-3 bg-green-50 rounded-lg">
-          <p className="text-sm text-slate-600 mb-1">Ortalama Günlük</p>
+          <p className="text-sm text-slate-600 mb-1">Daily Average</p>
           <p className="text-xl font-bold text-green-600">
             {currency}{(chartData.reduce((sum, d) => sum + d.sales, 0) / chartData.length).toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </p>
         </div>
         <div className="text-center p-3 bg-purple-50 rounded-lg">
-          <p className="text-sm text-slate-600 mb-1">Toplam Gün</p>
+          <p className="text-sm text-slate-600 mb-1">Total Days</p>
           <p className="text-xl font-bold text-purple-600">{chartData.length}</p>
         </div>
       </div>
@@ -289,7 +289,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
                 strokeWidth="1.5"
                 opacity="0.7"
               />
-              <title>{`Önceki: ${d.date.toLocaleDateString()}: ${currency}${d.sales.toLocaleString()}\n${d.orders} sipariş`}</title>
+              <title>{`Previous: ${d.date.toLocaleDateString()}: ${currency}${d.sales.toLocaleString()}\n${d.orders} orders`}</title>
             </g>
           );
         })}
@@ -308,7 +308,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
                 stroke="white"
                 strokeWidth="2"
               />
-              <title>{`${d.date.toLocaleDateString()}: ${currency}${d.sales.toLocaleString()}\n${d.orders} sipariş`}</title>
+              <title>{`${d.date.toLocaleDateString()}: ${currency}${d.sales.toLocaleString()}\n${d.orders} orders`}</title>
             </g>
           );
         })}
@@ -343,7 +343,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
           {allChartData.length > 7 && (
             <div className="flex items-center gap-4">
               <label className="text-sm font-medium text-slate-700 whitespace-nowrap">
-                Gösterilecek gün: {daysToShow}
+                Days to show: {daysToShow}
               </label>
               <input
                 type="range"
@@ -368,7 +368,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
                   }}
                   className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
                 >
-                  Son 7 Gün
+                  Last 7 Days
                 </button>
                 <button
                   onClick={() => {
@@ -377,7 +377,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
                   }}
                   className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
                 >
-                  Son 30 Gün
+                  Last 30 Days
                 </button>
                 <button
                   onClick={() => {
@@ -386,7 +386,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
                   }}
                   className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
                 >
-                  Tümü
+                  All
                 </button>
               </div>
             </div>
@@ -396,7 +396,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
           {allChartData.length > daysToShow && (
             <div className="flex items-center gap-4">
               <label className="text-sm font-medium text-slate-700 whitespace-nowrap">
-                Pozisyon:
+                Position:
               </label>
               <input
                 type="range"
@@ -407,7 +407,7 @@ const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ orders, comparisonOrd
                 className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-green-600"
               />
               <span className="text-xs text-slate-500 whitespace-nowrap">
-                {startIndex + 1} - {Math.min(startIndex + daysToShow, allChartData.length)} / {allChartData.length} gün
+                {startIndex + 1} - {Math.min(startIndex + daysToShow, allChartData.length)} / {allChartData.length} days
               </span>
             </div>
           )}

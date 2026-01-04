@@ -111,7 +111,7 @@ export const PostalZoneMap: React.FC<PostalZoneMapProps> = ({
             {zoneNames[zone] && (
               <p className="text-xs text-slate-500">Zone {zone}</p>
             )}
-            <p className="text-sm text-slate-600 mt-1">{zones[zone].count} sipariş</p>
+            <p className="text-sm text-slate-600 mt-1">{zones[zone].count} orders</p>
             <p className="text-sm font-semibold text-blue-600">{formatMoney(zones[zone].sales)}</p>
           </div>
         );
@@ -120,11 +120,11 @@ export const PostalZoneMap: React.FC<PostalZoneMapProps> = ({
       <div className="mt-2 flex items-center justify-center gap-4 text-xs text-slate-600">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(59, 130, 246, 0.3)' }}></div>
-          <span>Az sipariş</span>
+          <span>Few orders</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded" style={{ backgroundColor: 'rgba(59, 130, 246, 1)' }}></div>
-          <span>Çok sipariş</span>
+          <span>Many orders</span>
         </div>
       </div>
     </div>

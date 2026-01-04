@@ -13,7 +13,7 @@ import { MarketplaceCode } from '../../types/transaction';
 import { logger } from '../../utils/logger';
 
 // API Base URL
-const API_BASE_URL = 'http://78.47.117.36/api/amazon-analyzer';
+const API_BASE_URL = 'https://amzsellmetrics.iwa.web.tr/api/amazon-analyzer';
 
 // ============================================
 // SHIPPING RATES
@@ -432,6 +432,353 @@ export const saveProfitabilitySettings = async (settings: ProfitabilitySettings)
     logger.log('[ConfigAPI] Profitability settings saved to API');
   } catch (error) {
     console.error('[ConfigAPI] Error saving profitability settings:', error);
+    throw error;
+  }
+};
+
+// ============================================
+// FBM OVERRIDES (Custom Shipping & FBM Source)
+// ============================================
+
+export interface FbmOverride {
+  sku: string;
+  marketplace: string;
+  shippingCost: number | null;
+  shipFromCountry: 'TR' | 'US' | 'BOTH' | null;
+}
+
+/**
+ * Fetch all FBM overrides from API
+ */
+export const fetchFbmOverrides = async (): Promise<FbmOverride[]> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/fbm-overrides`);
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    const json = await response.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to fetch FBM overrides');
+    }
+
+    return (json.data || []).map((item: any) => ({
+      sku: item.sku,
+      marketplace: item.marketplace,
+      shippingCost: item.shipping_cost ? parseFloat(item.shipping_cost) : null,
+      shipFromCountry: item.ship_from_country,
+    }));
+  } catch (error) {
+    console.error('[ConfigAPI] Error fetching FBM overrides:', error);
+    return [];
+  }
+};
+
+/**
+ * Save single FBM override to API
+ */
+export const saveFbmOverride = async (override: FbmOverride): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/fbm-overrides`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sku: override.sku,
+        marketplace: override.marketplace,
+        shippingCost: override.shippingCost,
+        shipFromCountry: override.shipFromCountry,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const json = await response.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to save FBM override');
+    }
+  } catch (error) {
+    console.error('[ConfigAPI] Error saving FBM override:', error);
+    throw error;
+  }
+};
+
+/**
+ * Save multiple FBM overrides to API (bulk)
+ */
+export const saveFbmOverridesBulk = async (overrides: FbmOverride[]): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/fbm-overrides/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        overrides: overrides.map(o => ({
+          sku: o.sku,
+          marketplace: o.marketplace,
+          shippingCost: o.shippingCost,
+          shipFromCountry: o.shipFromCountry,
+        })),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const json = await response.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to save FBM overrides');
+    }
+
+    logger.log(`[ConfigAPI] ${overrides.length} FBM overrides saved to API`);
+  } catch (error) {
+    console.error('[ConfigAPI] Error saving FBM overrides:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete FBM override from API
+ */
+export const deleteFbmOverride = async (sku: string, marketplace: string): Promise<void> => {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/fbm-overrides/${encodeURIComponent(sku)}/${encodeURIComponent(marketplace)}`,
+      { method: 'DELETE' }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const json = await response.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to delete FBM override');
+    }
+  } catch (error) {
+    console.error('[ConfigAPI] Error deleting FBM override:', error);
+    throw error;
+  }
+};
+
+/**
+ * Clear only shipping cost for a FBM override
+ */
+export const clearFbmOverrideShipping = async (sku: string, marketplace: string): Promise<void> => {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/fbm-overrides/clear-shipping/${encodeURIComponent(sku)}/${encodeURIComponent(marketplace)}`,
+      { method: 'DELETE' }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('[ConfigAPI] Error clearing FBM override shipping:', error);
+    throw error;
+  }
+};
+
+/**
+ * Clear only ship_from_country for a FBM override
+ */
+export const clearFbmOverrideLocation = async (sku: string, marketplace: string): Promise<void> => {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/fbm-overrides/clear-location/${encodeURIComponent(sku)}/${encodeURIComponent(marketplace)}`,
+      { method: 'DELETE' }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('[ConfigAPI] Error clearing FBM override location:', error);
+    throw error;
+  }
+};
+
+// ============================================
+// TRANSACTION STORAGE
+// ============================================
+
+export interface TransactionStats {
+  total: number;
+  minDate: string | null;
+  maxDate: string | null;
+  byMarketplace: Array<{
+    marketplace_code: string;
+    count: number;
+    min_date: string;
+    max_date: string;
+  }>;
+}
+
+export interface TransactionApiData {
+  id: string;
+  fileName: string;
+  date: string;
+  dateOnly: string;
+  type: string;
+  categoryType: string;
+  orderId: string;
+  sku: string;
+  description: string;
+  marketplace: string;
+  fulfillment: string;
+  orderPostal: string;
+  quantity: number;
+  productSales: number;
+  promotionalRebates: number;
+  sellingFees: number;
+  fbaFees: number;
+  otherTransactionFees: number;
+  other: number;
+  vat: number;
+  liquidations: number;
+  total: number;
+  marketplaceCode: string;
+}
+
+/**
+ * Fetch transaction statistics from API
+ */
+export const fetchTransactionStats = async (): Promise<TransactionStats> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/transactions/stats`);
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    const json = await response.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to fetch transaction stats');
+    }
+    return json.data;
+  } catch (error) {
+    console.error('[ConfigAPI] Error fetching transaction stats:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all transactions from API
+ */
+export const fetchTransactions = async (params?: {
+  startDate?: string;
+  endDate?: string;
+  marketplace?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: TransactionApiData[]; meta: { total: number; limit: number; offset: number } }> => {
+  try {
+    const searchParams = new URLSearchParams();
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    if (params?.marketplace) searchParams.set('marketplace', params.marketplace);
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.offset) searchParams.set('offset', params.offset.toString());
+
+    const url = `${API_BASE_URL}/transactions${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
+    logger.log(`[ConfigAPI] Fetching transactions from ${url}`);
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    const json = await response.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to fetch transactions');
+    }
+
+    logger.log(`[ConfigAPI] Fetched ${json.data.length} transactions`);
+    return { data: json.data, meta: json.meta };
+  } catch (error) {
+    console.error('[ConfigAPI] Error fetching transactions:', error);
+    throw error;
+  }
+};
+
+/**
+ * Save transactions to API (bulk upsert)
+ */
+export const saveTransactions = async (
+  transactions: TransactionApiData[]
+): Promise<{ inserted: number; updated: number; errors: number; total: number }> => {
+  try {
+    logger.log(`[ConfigAPI] Saving ${transactions.length} transactions to API...`);
+
+    const response = await fetch(`${API_BASE_URL}/transactions/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactions }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const json = await response.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to save transactions');
+    }
+
+    logger.log(`[ConfigAPI] Transactions saved: ${json.data.inserted} inserted, ${json.data.updated} updated`);
+    return json.data;
+  } catch (error) {
+    console.error('[ConfigAPI] Error saving transactions:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete all transactions from API
+ */
+export const deleteAllTransactions = async (): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/transactions`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const json = await response.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to delete transactions');
+    }
+
+    logger.log('[ConfigAPI] All transactions deleted');
+  } catch (error) {
+    console.error('[ConfigAPI] Error deleting transactions:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete transactions by file name
+ */
+export const deleteTransactionsByFile = async (fileName: string): Promise<number> => {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/transactions/file/${encodeURIComponent(fileName)}`,
+      { method: 'DELETE' }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const json = await response.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to delete transactions');
+    }
+
+    logger.log(`[ConfigAPI] Deleted ${json.deleted} transactions from file ${fileName}`);
+    return json.deleted;
+  } catch (error) {
+    console.error('[ConfigAPI] Error deleting transactions by file:', error);
     throw error;
   }
 };

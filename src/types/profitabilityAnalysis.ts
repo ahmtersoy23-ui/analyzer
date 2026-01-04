@@ -292,6 +292,8 @@ export interface SKUProfitAnalysis {
   hasCostData: boolean;
   hasSizeData: boolean;
   desi: number | null;
+  /** FBM/Mixed ürünlerde kargo maliyeti 0 ise true - desi eksik veya rate bulunamadı */
+  hasShippingIssue: boolean;
 }
 
 // ============================================

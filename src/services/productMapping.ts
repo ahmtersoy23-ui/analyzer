@@ -18,18 +18,35 @@ export interface ProductInfo {
   fbmSource?: string | null;       // TR, LOCAL, BOTH - FBM gönderim kaynağı
 }
 
-// PriceLab API endpoint
-const PRICELAB_API_URL = 'http://78.47.117.36/api/products/mapping/amazon-analyzer';
+// SKU Master API endpoint (from sku_master table)
+const SKU_MASTER_API_URL = 'https://amzsellmetrics.iwa.web.tr/api/amazon-analyzer/sku-master';
 
 const CACHE_KEY = 'productMapping_cache';
 const CACHE_TIMESTAMP_KEY = 'productMapping_timestamp';
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
+// In-memory cache (survives even if localStorage fails)
+let memoryCache: { data: ProductInfo[]; timestamp: number } | null = null;
+
+// Prevent concurrent requests - store the pending promise
+let pendingFetch: Promise<ProductInfo[]> | null = null;
+
 /**
  * Fetch product mapping from PriceLab API with caching
+ * Uses both in-memory and localStorage caching
+ * Deduplicates concurrent requests
  */
 export const fetchProductMapping = async (forceRefresh = false): Promise<ProductInfo[]> => {
-  // Check cache first (unless force refresh)
+  // Check in-memory cache first (fastest)
+  if (!forceRefresh && memoryCache) {
+    const age = Date.now() - memoryCache.timestamp;
+    if (age < CACHE_DURATION) {
+      logger.log(`[ProductMapping] Using memory cache: ${memoryCache.data.length} products`);
+      return memoryCache.data;
+    }
+  }
+
+  // Check localStorage cache
   if (!forceRefresh) {
     const cachedData = localStorage.getItem(CACHE_KEY);
     const cachedTimestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
@@ -38,76 +55,114 @@ export const fetchProductMapping = async (forceRefresh = false): Promise<Product
       const age = Date.now() - parseInt(cachedTimestamp);
       if (age < CACHE_DURATION) {
         const products: ProductInfo[] = JSON.parse(cachedData);
-        logger.log(`[ProductMapping] Using cached data: ${products.length} products`);
+        // Also populate memory cache
+        memoryCache = { data: products, timestamp: parseInt(cachedTimestamp) };
+        logger.log(`[ProductMapping] Using localStorage cache: ${products.length} products`);
         return products;
       }
     }
   }
 
-  logger.log('[ProductMapping] Fetching from PriceLab API...');
-
-  // Fetch from PriceLab API
-  const response = await fetch(PRICELAB_API_URL);
-
-  if (!response.ok) {
-    throw new Error(`PriceLab API error: ${response.status} ${response.statusText}`);
+  // If there's already a pending fetch, return that promise (deduplicate requests)
+  if (pendingFetch && !forceRefresh) {
+    logger.log('[ProductMapping] Waiting for pending fetch...');
+    return pendingFetch;
   }
 
-  const json = await response.json();
-
-  if (!json.success || !Array.isArray(json.data)) {
-    throw new Error('Invalid response from PriceLab API');
-  }
-
-  // Transform API response to ProductInfo format
-  const products: ProductInfo[] = json.data.map((item: any) => ({
-    sku: item.sku || '',
-    asin: item.asin || '',
-    name: item.name || '',
-    parent: item.parent || '',
-    category: item.category || '',
-    cost: item.cost,
-    size: item.size,
-    marketplace: item.marketplace || '',
-    customShipping: item.customShipping ?? null,
-    fbmSource: item.fbmSource || null,
-  }));
-
-  logger.log(`[ProductMapping] Fetched ${products.length} products from PriceLab`);
-  logger.log(`[ProductMapping] With cost: ${json.meta?.withCost || 0}, With size: ${json.meta?.withSize || 0}`);
-
-  // Try to save to cache (may fail if localStorage is full)
-  try {
-    const timestamp = Date.now();
-    localStorage.setItem(CACHE_KEY, JSON.stringify(products));
-    localStorage.setItem(CACHE_TIMESTAMP_KEY, timestamp.toString());
-    logger.log('[ProductMapping] Cached successfully');
-  } catch (cacheError) {
-    // localStorage quota exceeded - continue without caching
-    console.warn('[ProductMapping] Cache failed (quota exceeded), continuing without cache');
-    // Clear old cache to free up space
+  // Create the fetch promise
+  pendingFetch = (async () => {
     try {
-      localStorage.removeItem(CACHE_KEY);
-      localStorage.removeItem(CACHE_TIMESTAMP_KEY);
-    } catch {
-      // Ignore
-    }
-  }
+      logger.log('[ProductMapping] Fetching from SKU Master API...');
 
-  return products;
+      const response = await fetch(SKU_MASTER_API_URL);
+
+      if (!response.ok) {
+        throw new Error(`SKU Master API error: ${response.status} ${response.statusText}`);
+      }
+
+      const json = await response.json();
+
+      if (!json.success || !Array.isArray(json.data)) {
+        throw new Error('Invalid response from SKU Master API');
+      }
+
+      // Transform API response to ProductInfo format
+      // sku_master fields: sku, marketplace, country_code, asin, iwasku, name, parent, category, cost, size, custom_shipping, fbm_source, fulfillment
+      const products: ProductInfo[] = json.data.map((item: any) => ({
+        sku: item.sku || '',
+        asin: item.asin || '',
+        name: item.name || '',
+        parent: item.parent || '',
+        category: item.category || '',
+        cost: item.cost !== null ? parseFloat(item.cost) : null,
+        size: item.size !== null ? parseFloat(item.size) : null,
+        marketplace: item.marketplace || item.country_code || '',
+        customShipping: item.custom_shipping !== null ? parseFloat(item.custom_shipping) : null,
+        fbmSource: item.fbm_source || null,
+      }));
+
+      // Count products with cost/size data
+      const withCost = products.filter(p => p.cost !== null).length;
+      const withSize = products.filter(p => p.size !== null).length;
+
+      logger.log(`[ProductMapping] Fetched ${products.length} products from SKU Master`);
+      logger.log(`[ProductMapping] With cost: ${withCost}, With size: ${withSize}`);
+
+      const timestamp = Date.now();
+
+      // Always save to memory cache
+      memoryCache = { data: products, timestamp };
+
+      // Try to save to localStorage cache
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(products));
+        localStorage.setItem(CACHE_TIMESTAMP_KEY, timestamp.toString());
+        logger.log('[ProductMapping] Cached to localStorage');
+      } catch (cacheError) {
+        // localStorage quota exceeded - memory cache is still valid
+        console.warn('[ProductMapping] localStorage cache failed (quota exceeded), using memory cache only');
+        try {
+          localStorage.removeItem(CACHE_KEY);
+          localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+        } catch {
+          // Ignore
+        }
+      }
+
+      return products;
+    } finally {
+      // Clear pending fetch so future calls can make new requests
+      pendingFetch = null;
+    }
+  })();
+
+  return pendingFetch;
 };
 
 /**
  * Get cached product mapping (synchronous)
+ * Checks memory cache first, then localStorage
  */
 export const getCachedProductMapping = (): ProductInfo[] | null => {
+  // Check memory cache first
+  if (memoryCache) {
+    const age = Date.now() - memoryCache.timestamp;
+    if (age < CACHE_DURATION) {
+      return memoryCache.data;
+    }
+  }
+
+  // Fall back to localStorage
   const cachedData = localStorage.getItem(CACHE_KEY);
   const cachedTimestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
 
   if (cachedData && cachedTimestamp) {
     const age = Date.now() - parseInt(cachedTimestamp);
     if (age < CACHE_DURATION) {
-      return JSON.parse(cachedData);
+      const products = JSON.parse(cachedData);
+      // Populate memory cache for future sync reads
+      memoryCache = { data: products, timestamp: parseInt(cachedTimestamp) };
+      return products;
     }
   }
 
@@ -118,6 +173,7 @@ export const getCachedProductMapping = (): ProductInfo[] | null => {
  * Clear cache to force refresh
  */
 export const clearProductMappingCache = (): void => {
+  memoryCache = null;
   localStorage.removeItem(CACHE_KEY);
   localStorage.removeItem(CACHE_TIMESTAMP_KEY);
   logger.log('[ProductMapping] Cache cleared');
@@ -165,11 +221,6 @@ export const createProductMap = (products: ProductInfo[]): Map<string, ProductIn
       map.set(p.sku, p);
     }
   });
-
-  logger.log(`[ProductMapping] Created map with ${map.size} entries from ${products.length} products`);
-  // Log sample keys
-  const keys = Array.from(map.keys()).slice(0, 10);
-  logger.log(`[ProductMapping] Sample keys:`, keys);
 
   return map;
 };
@@ -333,7 +384,7 @@ export const detectMissingSKUs = <T extends {
 export const exportMissingSKUsToPriceLab = async (
   missingSKUs: MissingSKUInfo[]
 ): Promise<{ added: number; skipped: number }> => {
-  const MISSING_SKU_API = 'http://78.47.117.36/api/products/mapping/amazon-analyzer/missing';
+  const MISSING_SKU_API = 'https://amzsellmetrics.iwa.web.tr/api/amazon-analyzer/sku-master/missing';
 
   try {
     const response = await fetch(MISSING_SKU_API, {

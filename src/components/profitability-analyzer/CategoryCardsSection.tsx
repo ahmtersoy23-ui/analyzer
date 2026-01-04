@@ -448,40 +448,57 @@ export const CategoryCardsSection: React.FC<CategoryCardsSectionProps> = React.m
     XLSX.writeFile(wb, generateFileName());
   }, [categoryProfitability, skuProfitability, generateFileName]);
 
+  // Calculate totals for "All Categories" card - using useMemo to enable comparison calculations before early return
+  const totals = useMemo(() => {
+    const totalRevenue = categoryProfitability.reduce((sum, c) => sum + c.totalRevenue, 0);
+    const totalProfit = categoryProfitability.reduce((sum, c) => sum + c.netProfit, 0);
+    const totalProducts = categoryProfitability.reduce((sum, c) => sum + c.totalProducts, 0);
+    const totalOrders = categoryProfitability.reduce((sum, c) => sum + c.totalOrders, 0);
+    const totalParents = categoryProfitability.reduce((sum, c) => sum + c.totalParents, 0);
+    const totalQuantity = categoryProfitability.reduce((sum, c) => sum + c.totalQuantity, 0);
+    const totalFbaQuantity = categoryProfitability.reduce((sum, c) => sum + c.fbaQuantity, 0);
+    const totalFbmQuantity = categoryProfitability.reduce((sum, c) => sum + c.fbmQuantity, 0);
+    const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+    // Amazon Expenses
+    const totalSellingFees = categoryProfitability.reduce((sum, c) => sum + c.sellingFees, 0);
+    const totalFbaFees = categoryProfitability.reduce((sum, c) => sum + c.fbaFees, 0);
+    const totalRefundLoss = categoryProfitability.reduce((sum, c) => sum + c.refundLoss, 0);
+    const totalVat = categoryProfitability.reduce((sum, c) => sum + c.vat, 0);
+    const totalAds = categoryProfitability.reduce((sum, c) => sum + c.advertisingCost, 0);
+    const totalFbaCost = categoryProfitability.reduce((sum, c) => sum + c.fbaCost, 0);
+    const totalFbmCost = categoryProfitability.reduce((sum, c) => sum + c.fbmCost, 0);
+    const amazonExpenses = totalSellingFees + totalFbaFees + totalRefundLoss + totalVat + totalAds + totalFbaCost + totalFbmCost;
+
+    // Non-Amazon Expenses
+    const totalProductCost = categoryProfitability.reduce((sum, c) => sum + c.totalProductCost, 0);
+    const totalShipping = categoryProfitability.reduce((sum, c) => sum + c.shippingCost, 0);
+    const totalCustomsDuty = categoryProfitability.reduce((sum, c) => sum + c.customsDuty, 0);
+    const totalDdpFee = categoryProfitability.reduce((sum, c) => sum + c.ddpFee, 0);
+    const totalWarehouse = categoryProfitability.reduce((sum, c) => sum + c.warehouseCost, 0);
+    const totalGst = categoryProfitability.reduce((sum, c) => sum + c.gstCost, 0);
+    const nonAmazonExpenses = totalProductCost + totalShipping + totalCustomsDuty + totalDdpFee + totalWarehouse + totalGst;
+
+    return {
+      totalRevenue, totalProfit, totalProducts, totalOrders, totalParents, totalQuantity,
+      totalFbaQuantity, totalFbmQuantity, avgMargin, totalSellingFees, totalFbaFees,
+      totalRefundLoss, totalVat, totalAds, totalFbaCost, totalFbmCost, amazonExpenses,
+      totalProductCost, totalShipping, totalCustomsDuty, totalDdpFee, totalWarehouse, totalGst, nonAmazonExpenses
+    };
+  }, [categoryProfitability]);
+
   if (categoryProfitability.length === 0) return null;
 
-  // Calculate totals for "All Categories" card
-  const totalRevenue = categoryProfitability.reduce((sum, c) => sum + c.totalRevenue, 0);
-  const totalProfit = categoryProfitability.reduce((sum, c) => sum + c.netProfit, 0);
-  const totalProducts = categoryProfitability.reduce((sum, c) => sum + c.totalProducts, 0);
-  const totalOrders = categoryProfitability.reduce((sum, c) => sum + c.totalOrders, 0);
-  const totalParents = categoryProfitability.reduce((sum, c) => sum + c.totalParents, 0);
-  const totalQuantity = categoryProfitability.reduce((sum, c) => sum + c.totalQuantity, 0);
-  const totalFbaQuantity = categoryProfitability.reduce((sum, c) => sum + c.fbaQuantity, 0);
-  const totalFbmQuantity = categoryProfitability.reduce((sum, c) => sum + c.fbmQuantity, 0);
-  const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+  // Destructure totals for use in JSX
+  const {
+    totalRevenue, totalProfit, totalProducts, totalOrders, totalParents, totalQuantity,
+    totalFbaQuantity, totalFbmQuantity, avgMargin, totalSellingFees, totalFbaFees,
+    totalRefundLoss, totalVat, totalAds, totalFbaCost, totalFbmCost, amazonExpenses,
+    totalProductCost, totalShipping, totalCustomsDuty, totalDdpFee, totalWarehouse, totalGst, nonAmazonExpenses
+  } = totals;
 
   // Calculate overall fulfillment type
   const overallFulfillment = totalFbmQuantity === 0 ? 'FBA' : totalFbaQuantity === 0 ? 'FBM' : 'Mixed';
-
-  // Amazon Expenses
-  const totalSellingFees = categoryProfitability.reduce((sum, c) => sum + c.sellingFees, 0);
-  const totalFbaFees = categoryProfitability.reduce((sum, c) => sum + c.fbaFees, 0);
-  const totalRefundLoss = categoryProfitability.reduce((sum, c) => sum + c.refundLoss, 0);
-  const totalVat = categoryProfitability.reduce((sum, c) => sum + c.vat, 0);
-  const totalAds = categoryProfitability.reduce((sum, c) => sum + c.advertisingCost, 0);
-  const totalFbaCost = categoryProfitability.reduce((sum, c) => sum + c.fbaCost, 0);
-  const totalFbmCost = categoryProfitability.reduce((sum, c) => sum + c.fbmCost, 0);
-  const amazonExpenses = totalSellingFees + totalFbaFees + totalRefundLoss + totalVat + totalAds + totalFbaCost + totalFbmCost;
-
-  // Non-Amazon Expenses
-  const totalProductCost = categoryProfitability.reduce((sum, c) => sum + c.totalProductCost, 0);
-  const totalShipping = categoryProfitability.reduce((sum, c) => sum + c.shippingCost, 0);
-  const totalCustomsDuty = categoryProfitability.reduce((sum, c) => sum + c.customsDuty, 0);
-  const totalDdpFee = categoryProfitability.reduce((sum, c) => sum + c.ddpFee, 0);
-  const totalWarehouse = categoryProfitability.reduce((sum, c) => sum + c.warehouseCost, 0);
-  const totalGst = categoryProfitability.reduce((sum, c) => sum + c.gstCost, 0);
-  const nonAmazonExpenses = totalProductCost + totalShipping + totalCustomsDuty + totalDdpFee + totalWarehouse + totalGst;
 
   // Percentages
   const amazonPct = totalRevenue > 0 ? (amazonExpenses / totalRevenue) * 100 : 0;

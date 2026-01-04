@@ -32,7 +32,7 @@ import {
   calculateParentProfitability,
   calculateSKUProfitability,
 } from '../services/profitability/profitabilityAnalytics';
-import { exportForPricingCalculator, exportAmazonExpensesForPriceLab } from '../services/profitability/pricingExport';
+import { exportForPricingCalculator, exportAmazonExpensesForPriceLab, exportAmazonExpensesV2ForPriceLab } from '../services/profitability/pricingExport';
 import {
   calculateAdvertisingCost,
   calculateFBACosts,
@@ -48,6 +48,7 @@ import { CategoryCardsSection } from './profitability-analyzer/CategoryCardsSect
 import { FiltersSection } from './profitability-analyzer/FiltersSection';
 import { CoverageStatsSection } from './profitability-analyzer/CoverageStatsSection';
 import { exportMissingSKUsToPriceLab, type MissingSKUInfo } from '../services/productMapping';
+import { fetchFbmOverrides, saveFbmOverridesBulk, type FbmOverride } from '../services/api/configApi';
 
 // Types needed for lazy components
 import type { NameOverride, FBMNameInfo } from './profitability-analyzer/CostUploadTab';
@@ -83,6 +84,20 @@ const EMPTY_SKU_RESULT: { skuProfitability: any[]; excludedSkus: any[]; gradeRes
 };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const EMPTY_ARRAY: any[] = [];
+
+/**
+ * Get dateOnly string from transaction, with fallback to Date object
+ * Ensures date filtering works even for older data without dateOnly field
+ */
+const getDateOnly = (t: TransactionData): string => {
+  if (t.dateOnly) return t.dateOnly;
+  if (t.date) {
+    // Derive YYYY-MM-DD from Date object (local timezone)
+    const d = t.date;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  return '';
+};
 
 interface ProfitabilityAnalyzerProps {
   transactionData: TransactionData[];
@@ -148,19 +163,176 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
 
   // NAME Overrides - NAME bazlı manuel girilen özel kargo ve FBM kaynak bilgileri
   // Bir NAME'e girilen değer, o NAME altındaki tüm FBM SKU'lara uygulanır
-  const [nameOverrides, setNameOverrides] = useState<NameOverride[]>(() => {
-    try {
-      const saved = localStorage.getItem(NAME_OVERRIDES_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Loaded from API on mount, saved to API on change
+  const [nameOverrides, setNameOverrides] = useState<NameOverride[]>([]);
+  const [fbmOverridesLoaded, setFbmOverridesLoaded] = useState(false);
+  const fbmOverridesInitialLoadRef = React.useRef(true);
 
-  // Save NAME overrides to localStorage
+  // Raw SKU-level FBM overrides from API - used to merge with costData
+  const [rawSkuOverrides, setRawSkuOverrides] = useState<Map<string, FbmOverride>>(new Map());
+
+  // Load FBM overrides from API and convert to nameOverrides format
   useEffect(() => {
+    const loadFbmOverrides = async () => {
+      try {
+        const apiOverrides = await fetchFbmOverrides();
+        if (apiOverrides.length > 0) {
+          // Store raw SKU-level overrides for merging with costData
+          const skuOverrideMap = new Map<string, FbmOverride>();
+          apiOverrides.forEach(o => skuOverrideMap.set(o.sku, o));
+          setRawSkuOverrides(skuOverrideMap);
+
+          logger.log(`[FBM Overrides] Loaded ${apiOverrides.length} SKU overrides from API`);
+
+          // Also build nameOverrides for UI display (using SKU as name placeholder)
+          const nameMap = new Map<string, { skus: string[]; customShipping: number | null; fbmSource: 'TR' | 'US' | 'BOTH' | null }>();
+
+          apiOverrides.forEach(o => {
+            const name = o.sku; // Use SKU as name key for now
+            if (!nameMap.has(name)) {
+              nameMap.set(name, { skus: [o.sku], customShipping: o.shippingCost, fbmSource: o.shipFromCountry });
+            } else {
+              const existing = nameMap.get(name)!;
+              if (!existing.skus.includes(o.sku)) {
+                existing.skus.push(o.sku);
+              }
+            }
+          });
+
+          // Convert nameMap to NameOverride array for UI
+          const apiNameOverrides: NameOverride[] = Array.from(nameMap.entries()).map(([name, data]) => ({
+            name,
+            customShipping: data.customShipping,
+            fbmSource: data.fbmSource,
+            fbmSkuCount: data.skus.length,
+          }));
+
+          if (apiNameOverrides.length > 0) {
+            setNameOverrides(apiNameOverrides);
+            logger.log(`[FBM Overrides] Applied ${apiNameOverrides.length} overrides from API`);
+          } else {
+            // Fallback to localStorage if API had no data
+            try {
+              const savedLocal = localStorage.getItem(NAME_OVERRIDES_STORAGE_KEY);
+              if (savedLocal) {
+                const localOverrides = JSON.parse(savedLocal);
+                setNameOverrides(localOverrides);
+              }
+            } catch {
+              // Ignore localStorage errors
+            }
+          }
+        } else {
+          // No API data - try localStorage fallback and migrate to API
+          try {
+            const savedLocal = localStorage.getItem(NAME_OVERRIDES_STORAGE_KEY);
+            if (savedLocal) {
+              const localOverrides = JSON.parse(savedLocal);
+              setNameOverrides(localOverrides);
+
+              // MIGRATION: If localStorage has data but API is empty, migrate to API
+              // Note: We use NAME as SKU placeholder since costData isn't loaded yet
+              // The proper SKU mapping happens in the save effect when costData is available
+              if (localOverrides.length > 0) {
+                logger.log(`[FBM Overrides] Migrating ${localOverrides.length} overrides from localStorage to API...`);
+
+                // Build overrides using NAME as SKU placeholder
+                // When costData loads, the save effect will update with proper SKUs
+                const skuOverrides: FbmOverride[] = localOverrides.map((override: NameOverride) => ({
+                  sku: override.name, // Use NAME as placeholder - will be expanded when costData loads
+                  marketplace: 'US',
+                  shippingCost: override.customShipping,
+                  shipFromCountry: override.fbmSource,
+                }));
+
+                if (skuOverrides.length > 0) {
+                  saveFbmOverridesBulk(skuOverrides)
+                    .then(() => logger.log(`[FBM Overrides] Migration complete: ${skuOverrides.length} overrides saved to API`))
+                    .catch(err => console.error('[FBM Overrides] Migration failed:', err));
+                }
+              }
+            }
+          } catch {
+            // Ignore
+          }
+        }
+      } catch (error) {
+        console.error('[FBM Overrides] Error loading from API:', error);
+        // Fallback to localStorage
+        try {
+          const savedLocal = localStorage.getItem(NAME_OVERRIDES_STORAGE_KEY);
+          if (savedLocal) {
+            setNameOverrides(JSON.parse(savedLocal));
+          }
+        } catch {
+          // Ignore
+        }
+      } finally {
+        setFbmOverridesLoaded(true);
+      }
+    };
+
+    loadFbmOverrides();
+  }, []);
+
+  // Save NAME overrides to both localStorage and API
+  useEffect(() => {
+    // Skip initial load
+    if (fbmOverridesInitialLoadRef.current) {
+      if (fbmOverridesLoaded) {
+        fbmOverridesInitialLoadRef.current = false;
+      }
+      return;
+    }
+
+    // Save to localStorage immediately
     localStorage.setItem(NAME_OVERRIDES_STORAGE_KEY, JSON.stringify(nameOverrides));
-  }, [nameOverrides]);
+
+    // Save to API - expand nameOverrides to SKU-level using costData
+    const saveToApi = async () => {
+      if (nameOverrides.length === 0) return;
+
+      // Build SKU-level overrides from nameOverrides
+      const skuOverrides: FbmOverride[] = [];
+
+      nameOverrides.forEach(override => {
+        // Find all SKUs for this NAME from costData
+        const skusForName = costData.filter(c => c.name === override.name).map(c => c.sku);
+
+        if (skusForName.length > 0) {
+          skusForName.forEach(sku => {
+            skuOverrides.push({
+              sku,
+              marketplace: 'US', // FBM overrides are primarily for US
+              shippingCost: override.customShipping,
+              shipFromCountry: override.fbmSource,
+            });
+          });
+        } else {
+          // If no SKUs found (shouldn't happen normally), use name as placeholder
+          skuOverrides.push({
+            sku: override.name, // Use name as SKU placeholder
+            marketplace: 'US',
+            shippingCost: override.customShipping,
+            shipFromCountry: override.fbmSource,
+          });
+        }
+      });
+
+      if (skuOverrides.length > 0) {
+        try {
+          await saveFbmOverridesBulk(skuOverrides);
+          logger.log(`[FBM Overrides] Saved ${skuOverrides.length} overrides to API`);
+        } catch (error) {
+          console.error('[FBM Overrides] Error saving to API:', error);
+        }
+      }
+    };
+
+    // Debounce API save to avoid too many requests
+    const timeoutId = setTimeout(saveToApi, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [nameOverrides, fbmOverridesLoaded, costData]);
 
   // Save cost data to localStorage (only when it has actual uploaded data, not extracted data)
   useEffect(() => {
@@ -329,12 +501,32 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     const outputWithSize = result.filter(c => c.size !== null).length;
     logger.log(`[mergedCostData] After sibling matching: ${result.length} SKUs, ${outputWithCost} with cost, ${outputWithSize} with size`);
 
-    // Note: NAME-level overrides (customShipping, fbmSource) are now directly written to costData
-    // via handleSkuOverrideUpdate callback when user changes override values in CostUploadTab.
-    // This eliminates the need for complex NAME→SKU mapping at this stage.
+    // Step 4: Apply raw SKU overrides from API (fbm_overrides table)
+    // This fills customShipping and fbmSource for SKUs that have overrides
+    if (rawSkuOverrides.size > 0) {
+      let appliedCount = 0;
+      result = result.map(item => {
+        const override = rawSkuOverrides.get(item.sku);
+        if (!override) return item;
+
+        // Apply override values if not already set
+        const needsShipping = item.customShipping === null && override.shippingCost !== null;
+        const needsSource = !item.fbmSource && override.shipFromCountry !== null;
+
+        if (!needsShipping && !needsSource) return item;
+
+        appliedCount++;
+        return {
+          ...item,
+          customShipping: needsShipping ? override.shippingCost : item.customShipping,
+          fbmSource: needsSource ? override.shipFromCountry : item.fbmSource,
+        };
+      });
+      logger.log(`[mergedCostData] Applied ${appliedCount} FBM overrides from API`);
+    }
 
     return result;
-  }, [costData]);
+  }, [costData, rawSkuOverrides]);
 
   // ============================================
   // AVAILABLE CATEGORIES (from transactions)
@@ -360,16 +552,8 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     const filtered = transactionData.filter(t => {
       if (!t.sku) return false;
 
-      // Date filtering - use dateOnly string comparison (YYYY-MM-DD)
-      // This avoids timezone issues by comparing original date from Excel
-      // For backwards compatibility: if dateOnly is missing, derive from date object
-      let dateOnlyStr = t.dateOnly;
-      if (!dateOnlyStr && t.date) {
-        // Create YYYY-MM-DD from date object (using local timezone)
-        const d = t.date;
-        dateOnlyStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      }
-      if (!isDateInRange(dateOnlyStr, startDate, endDate)) return false;
+      // Date filtering - use dateOnly string comparison (YYYY-MM-DD), with fallback
+      if (!isDateInRange(getDateOnly(t), startDate, endDate)) return false;
 
       // Marketplace filtering - support multi-select
       if (selectedMarketplaces.size > 0) {
@@ -398,8 +582,8 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   // Cost transactions (Service Fee, FBA Inventory Fee, etc.) don't have fulfillment field
   const costTransactions = useMemo(() => {
     return transactionData.filter(t => {
-      // Date filtering - use dateOnly string comparison (YYYY-MM-DD)
-      if (!isDateInRange(t.dateOnly, startDate, endDate)) return false;
+      // Date filtering - use dateOnly string comparison (YYYY-MM-DD), with fallback
+      if (!isDateInRange(getDateOnly(t), startDate, endDate)) return false;
 
       // Marketplace filtering - support multi-select
       if (selectedMarketplaces.size > 0) {
@@ -648,9 +832,10 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     const nonGrSkus = excludeGradeResell ? allSkus.filter(s => !isGradeResellSku(s.sku)) : allSkus;
 
     // Filter SKUs with complete data vs excluded
-    const included = nonGrSkus.filter(s => s.hasCostData && s.hasSizeData);
+    // Exclude if: missing cost OR missing size OR has shipping issue (FBM/Mixed with $0 shipping)
+    const included = nonGrSkus.filter(s => s.hasCostData && s.hasSizeData && !s.hasShippingIssue);
     const excluded = nonGrSkus
-      .filter(s => !s.hasCostData || !s.hasSizeData)
+      .filter(s => !s.hasCostData || !s.hasSizeData || s.hasShippingIssue)
       .sort((a, b) => b.totalRevenue - a.totalRevenue); // Sort by revenue desc
     return { skuProfitability: included, excludedSkus: excluded, gradeResellSkus: grSkus };
   }, [filteredTransactions, mergedCostData, shippingRates, countryConfigs, filterMarketplace, selectedMarketplaces, costPercentages, excludeGradeResell, calculateMarketplaceCostPercentages]);
@@ -707,7 +892,6 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   const filteredCategoryProfitability = useMemo(() => {
     return calculateCategoryProfitability(filteredParentProfitability, filteredProducts);
   }, [filteredParentProfitability, filteredProducts]);
-
   // Filtered Parent and Category profitability (for detail tables)
   const displayParents = useMemo(() => {
     let filtered = [...parentProfitability];
@@ -830,6 +1014,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     const excludedRevenue = excludedSkus.reduce((sum, s) => sum + s.totalRevenue, 0);
     const revenueCoveragePercent = totalRevenue > 0 ? (calculatedRevenue / totalRevenue) * 100 : 0;
 
+    // FBM/Mixed SKUs with $0 shipping cost - this is an error condition
+    const shippingIssueSkus = [...skuProfitability, ...excludedSkus].filter(s => s.hasShippingIssue);
+    const shippingIssueCount = shippingIssueSkus.length;
+    const shippingIssueRevenue = shippingIssueSkus.reduce((sum, s) => sum + s.totalRevenue, 0);
+
     return {
       totalSkus,
       calculatedSkus,
@@ -841,6 +1030,9 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       revenueCoveragePercent,
       gradeResellCount,
       gradeResellRevenue,
+      shippingIssueCount,
+      shippingIssueRevenue,
+      shippingIssueSkus,
     };
   }, [skuProfitability, excludedSkus, gradeResellSkus]);
 
@@ -1108,7 +1300,11 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   }, []);
 
   // Handle inline cost/size/override updates from CoverageStatsSection
+  // When FBM override is set for a SKU, also apply to all other SKUs with the same NAME
   const handleInlineCostUpdate = useCallback((updates: { sku: string; name: string; cost: number | null; size: number | null; customShipping?: number | null; fbmSource?: 'TR' | 'US' | 'BOTH' | null }[]) => {
+    // Track all SKUs that need FBM override updates (including siblings with same NAME)
+    const allFbmOverrides: FbmOverride[] = [];
+
     setCostData(prev => {
       const newData = [...prev];
 
@@ -1136,10 +1332,52 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
             fbmSource: update.fbmSource ?? null,
           });
         }
+
+        // If FBM override provided, find all SKUs with same NAME and apply to them too
+        if (update.customShipping !== undefined || update.fbmSource !== undefined) {
+          // Find all SKUs with same NAME from costData
+          const siblingSKUs = newData.filter(item => item.name === update.name).map(item => item.sku);
+
+          // If no siblings found in costData, at least include the current SKU
+          const skusToUpdate = siblingSKUs.length > 0 ? siblingSKUs : [update.sku];
+
+          // Apply FBM override to all sibling SKUs
+          skusToUpdate.forEach(sku => {
+            // Update in costData
+            const siblingIndex = newData.findIndex(item => item.sku === sku);
+            if (siblingIndex >= 0 && sku !== update.sku) {
+              // Update sibling's override fields (not cost/size)
+              newData[siblingIndex] = {
+                ...newData[siblingIndex],
+                ...(update.customShipping !== undefined && { customShipping: update.customShipping }),
+                ...(update.fbmSource !== undefined && { fbmSource: update.fbmSource }),
+              };
+            }
+
+            // Add to database update list
+            allFbmOverrides.push({
+              sku,
+              marketplace: 'US',
+              shippingCost: update.customShipping ?? null,
+              shipFromCountry: update.fbmSource ?? null,
+            });
+          });
+
+          if (skusToUpdate.length > 1) {
+            logger.log(`[FBM Overrides] Applying override to ${skusToUpdate.length} SKUs with NAME: ${update.name}`);
+          }
+        }
       });
 
       return newData;
     });
+
+    // Save all FBM overrides to database
+    if (allFbmOverrides.length > 0) {
+      saveFbmOverridesBulk(allFbmOverrides)
+        .then(() => logger.log(`[FBM Overrides] Saved ${allFbmOverrides.length} overrides from Data Coverage`))
+        .catch(err => console.error('[FBM Overrides] Error saving from Data Coverage:', err));
+    }
   }, []);
 
   // Handle SKU-level override updates from CostUploadTab
@@ -1433,7 +1671,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
                     start: startDate ? new Date(startDate) : minDate,
                     end: endDate ? new Date(endDate) : maxDate,
                   };
-                  exportAmazonExpensesForPriceLab(skuProfitability, dateRange);
+                  exportAmazonExpensesV2ForPriceLab(skuProfitability, dateRange);
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
               >
@@ -1442,7 +1680,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
               </button>
             </div>
             <p className="text-xs text-purple-500 mt-2">
-              PriceLab'a yüklemek için Amazon masraflarını (transaction verilerinden) JSON olarak indirin. Her ülke için FBA, FBM ve US için FBM-US ayrı.
+              PriceLab'a yüklemek için Amazon masraflarını (kategori bazlı) JSON olarak indirin. Ülke → Fulfillment → Kategori yapısında, margin ve ROI dahil.
             </p>
           </div>
         )}
@@ -1540,6 +1778,8 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
             selectedItem={selectedItem}
             onClose={() => setSelectedItem(null)}
             formatMoney={formatMoney}
+            transactionData={transactionData}
+            marketplace={filterMarketplace}
           />
         </Suspense>
       </div>

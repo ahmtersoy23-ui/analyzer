@@ -1,14 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Upload, FileSpreadsheet, Package, RefreshCw, AlertCircle, Save, Database, Trash2, Sparkles, ChevronDown, ChevronUp, BarChart3, Download, FolderUp } from 'lucide-react';
-import * as DB from '../utils/indexedDB';
+import { Upload, FileSpreadsheet, Package, RefreshCw, AlertCircle, Save, Database, Trash2, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
+import * as DB from '../utils/transactionStorage';
 import { exportTransactionsToExcel } from '../utils/excelExport';
 import { getMarketplaceCurrency, CURRENCY_SYMBOLS } from '../utils/currencyExchange';
 import type { MarketplaceCode, TransactionData, MarketplaceConfig } from '../types/transaction';
 import { MARKETPLACE_CONFIGS, ZONE_NAMES } from '../constants/marketplaces';
 import { calculateAnalytics } from '../services/analytics/analyticsEngine';
+import { normalizeAdjustmentDescription, normalizeInventoryFeeDescription, consolidateSmallGroups } from '../services/analytics/calculations';
 import { processExcelFile, detectMarketplaceFromFile } from '../services/fileProcessor';
-import AdvancedDashboard from './dashboard/AdvancedDashboard';
 import { fetchProductMapping, createProductMap, enrichTransaction } from '../services/productMapping';
+import { fetchTransactions, fetchTransactionStats, saveTransactions, TransactionApiData } from '../services/api/configApi';
 
 // Import extracted helpers and components
 import { formatDateHuman, translateDescription } from './transaction-analyzer/helpers';
@@ -18,6 +19,8 @@ import { TransactionFilters } from './transaction-analyzer/TransactionFilters';
 import { OrderDetailsCards } from './transaction-analyzer/OrderDetailsCards';
 import { FulfillmentStatsCards } from './transaction-analyzer/FulfillmentStatsCards';
 import { FeeDetailsSection } from './transaction-analyzer/FeeDetailsSection';
+import DataConsistencyCheck from './DataConsistencyCheck';
+import { UnprocessedTransactionsSection } from './profitability-analyzer/UnprocessedTransactionsSection';
 // Note: PostalZoneMap is extracted but currently inline due to zone data handling
 // import { PostalZoneMap } from './transaction-analyzer/PostalZoneMap';
 
@@ -46,6 +49,37 @@ interface TransactionSavedFilters {
   comparisonMode?: 'none' | 'previous-period' | 'previous-year';
 }
 
+// Helper function to convert API data to TransactionData format (outside component for hoisting)
+// API returns numeric fields as strings, so we need to parse them
+const convertApiToTransactionData = (apiData: TransactionApiData[]): TransactionData[] => {
+  return apiData.map(item => ({
+    id: item.id,
+    fileName: item.fileName,
+    date: new Date(item.date),
+    dateOnly: String(item.dateOnly).split('T')[0], // Extract just the date part (YYYY-MM-DD)
+    type: item.type,
+    categoryType: item.categoryType,
+    orderId: item.orderId,
+    sku: item.sku,
+    description: item.description,
+    descriptionLower: item.description.toLowerCase(),
+    marketplace: item.marketplace,
+    fulfillment: item.fulfillment,
+    orderPostal: item.orderPostal,
+    quantity: typeof item.quantity === 'string' ? parseInt(item.quantity) || 0 : (item.quantity || 0),
+    productSales: typeof item.productSales === 'string' ? parseFloat(item.productSales) || 0 : (item.productSales || 0),
+    promotionalRebates: typeof item.promotionalRebates === 'string' ? parseFloat(item.promotionalRebates) || 0 : (item.promotionalRebates || 0),
+    sellingFees: typeof item.sellingFees === 'string' ? parseFloat(item.sellingFees) || 0 : (item.sellingFees || 0),
+    fbaFees: typeof item.fbaFees === 'string' ? parseFloat(item.fbaFees) || 0 : (item.fbaFees || 0),
+    otherTransactionFees: typeof item.otherTransactionFees === 'string' ? parseFloat(item.otherTransactionFees) || 0 : (item.otherTransactionFees || 0),
+    other: typeof item.other === 'string' ? parseFloat(item.other) || 0 : (item.other || 0),
+    vat: typeof item.vat === 'string' ? parseFloat(item.vat) || 0 : (item.vat || 0),
+    liquidations: typeof item.liquidations === 'string' ? parseFloat(item.liquidations) || 0 : (item.liquidations || 0),
+    total: typeof item.total === 'string' ? parseFloat(item.total) || 0 : (item.total || 0),
+    marketplaceCode: item.marketplaceCode,
+  }));
+};
+
 const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   onDataLoaded
 }) => {
@@ -69,7 +103,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   const config = useMemo(() => {
     return marketplaceCode ? CONFIGS[marketplaceCode] : {
       code: 'ALL',
-      name: 'Tümü',
+      name: 'All',
       currency: 'Mixed',
       currencySymbol: '',
       hasVAT: true,  // Tümü modunda VAT göster (bazı ülkelerde var)
@@ -84,6 +118,25 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   }, [marketplaceCode]);
   // Removed: const [files, setFiles] - we now use storedFiles (marketplace metadata) instead
   const [allData, setAllData] = useState<TransactionData[]>([]);
+
+  // Pre-grouped data by marketplace for O(1) filtering
+  const dataByMarketplace = useMemo(() => {
+    const map = new Map<string, TransactionData[]>();
+    map.set('ALL', allData); // Keep reference to all data
+
+    allData.forEach(item => {
+      const code = item.marketplaceCode || 'UNKNOWN';
+      const existing = map.get(code);
+      if (existing) {
+        existing.push(item);
+      } else {
+        map.set(code, [item]);
+      }
+    });
+
+    return map;
+  }, [allData]);
+
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>(() => {
@@ -111,9 +164,6 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   type ComparisonDetailType = 'adjustments' | 'inventory' | 'service' | 'fbaCostBreakdown';
   const [comparisonDetailOpen, setComparisonDetailOpen] = useState<boolean>(false);
   const [comparisonDetailType, setComparisonDetailType] = useState<ComparisonDetailType | null>(null);
-
-  // Advanced Dashboard toggle
-  const [showAdvancedDashboard, setShowAdvancedDashboard] = useState<boolean>(false);
 
   // Collapsible sections
   const [showFileUpload, setShowFileUpload] = useState<boolean>(false);
@@ -162,27 +212,16 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   // Generic type to handle both TransactionData and DB.TransactionData
   const enrichTransactionsWithProductData = async <T extends TransactionData>(data: T[]): Promise<T[]> => {
     try {
-      console.log(`[Enrichment] Starting enrichment for ${data.length} transactions`);
       const productInfo = await fetchProductMapping();
-      console.log(`[Enrichment] Got ${productInfo.length} products from mapping`);
 
       if (productInfo.length > 0) {
         const productMap = createProductMap(productInfo);
-
-        // Debug: Check a few SKUs from transactions against the map
-        const sampleTx = data.slice(0, 5);
-        console.log('[Enrichment] Sample transaction SKUs:', sampleTx.map(t => `${t.marketplaceCode}:${t.sku}`));
-        sampleTx.forEach(t => {
-          const found = productMap.get(`${t.marketplaceCode}:${t.sku}`) || productMap.get(t.sku);
-          console.log(`[Enrichment] SKU ${t.sku} (${t.marketplaceCode}): ${found ? 'FOUND - ' + found.category : 'NOT FOUND'}`);
-        });
-
         const enriched = data.map(transaction => enrichTransaction(transaction, productMap) as T);
 
-        // Count enriched transactions
+        // Summary log only
         const withCategory = enriched.filter(t => t.productCategory).length;
         const withCost = enriched.filter(t => t.productCost !== null && t.productCost !== undefined).length;
-        console.log(`[Enrichment] Results: ${withCategory}/${data.length} with category, ${withCost}/${data.length} with cost`);
+        console.log(`[Enrichment] ${data.length} transactions → ${withCategory} with category, ${withCost} with cost`);
 
         return enriched;
       }
@@ -235,11 +274,11 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
         // LIMIT: Prevent loading files that are too large
         if (data.length > 150000) {
           throw new Error(
-            `❌ Dosya çok büyük: ${file.name}\n\n` +
-            `Bu dosyada ${data.length.toLocaleString()} işlem var.\n` +
-            `Maksimum 150,000 işlem yüklenebilir.\n\n` +
-            `Lütfen daha küçük bir tarih aralığı için rapor indirin veya\n` +
-            `dosyayı Excel'de parçalara bölün.`
+            `❌ File too large: ${file.name}\n\n` +
+            `This file contains ${data.length.toLocaleString()} transactions.\n` +
+            `Maximum 150,000 transactions can be loaded.\n\n` +
+            `Please download a report for a smaller date range or\n` +
+            `split the file in Excel.`
           );
         }
 
@@ -247,7 +286,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
         const marketplaceValidation = DB.validateMarketplaceData(quickRead, data);
         if (!marketplaceValidation.isValid) {
           throw new Error(
-            `Dosya uyumsuzluğu: ${file.name}\n${marketplaceValidation.errors.join('\n')}`
+            `File mismatch: ${file.name}\n${marketplaceValidation.errors.join('\n')}`
           );
         }
 
@@ -263,13 +302,13 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
             totalSkipped += result.skipped;
 
             if (result.skipped > 0) {
-              warnings.push(`${file.name}: ${result.skipped} duplicate işlem atlandı`);
+              warnings.push(`${file.name}: ${result.skipped} duplicate transactions skipped`);
             }
 
             // Auto-save to localStorage after successful DB save
             // Auto-backup disabled - not needed
           } catch {
-            warnings.push(`${file.name} veritabanına kaydedilemedi (devam edildi)`);
+            warnings.push(`${file.name} could not be saved to database (continued)`);
           }
         }
       }
@@ -286,21 +325,21 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
         } else if (!marketplaceCode) {
           // Birden fazla marketplace var, ilkini seç
           setMarketplaceCode(Array.from(detectedMarketplaces)[0]);
-          warnings.push(`Birden fazla marketplace tespit edildi (${marketplaceNames}). Filtrelerden seçim yapabilirsiniz.`);
+          warnings.push(`Multiple marketplaces detected (${marketplaceNames}). You can select from filters.`);
         }
       }
 
       // Success message
       if (totalAdded > 0 || totalSkipped > 0) {
-        warnings.unshift(`✅ Toplam: ${totalAdded} yeni işlem eklendi, ${totalSkipped} duplicate atlandı`);
+        warnings.unshift(`✅ Total: ${totalAdded} new transactions added, ${totalSkipped} duplicates skipped`);
       }
 
       if (warnings.length > 0) {
         setValidationWarnings(warnings);
       }
 
-      // Reload data from IndexedDB
-      await loadDataFromIndexedDB();
+      // Reload data from IndexedDB and notify parent (App.tsx) to enable other tabs
+      await loadDataFromIndexedDB(true);
 
       // Stored files listesini yenile (marketplace metadata'dan)
       const allFiles = await DB.getAllFiles();
@@ -312,20 +351,30 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
     }
   };
 
-  // Load data from IndexedDB based on marketplace selection
+  // Load data from API or IndexedDB based on marketplace selection
   // notifyParent: only call onDataLoaded when loading ALL data (initial load), not for filtered views
-  const loadDataFromIndexedDB = async (notifyParent: boolean = false) => {
+  const loadDataFromDatabase = async (notifyParent: boolean = false) => {
     try {
       setLoading(true);
 
-      let transactions: DB.TransactionData[];
+      let transactions: TransactionData[];
 
-      if (marketplaceCode) {
-        // Load specific marketplace
-        transactions = await DB.getTransactionsByMarketplace(marketplaceCode);
-      } else {
-        // Load all marketplaces (Tümü mode - when marketplaceCode is null)
-        transactions = await DB.getAllTransactions();
+      // First try API
+      try {
+        const params: { marketplace?: string; limit: number } = { limit: 500000 };
+        if (marketplaceCode) {
+          params.marketplace = marketplaceCode;
+        }
+        const response = await fetchTransactions(params);
+        transactions = convertApiToTransactionData(response.data);
+      } catch (apiError) {
+        console.warn('[TransactionAnalyzer] API load failed, falling back to IndexedDB:', apiError);
+        // Fallback to IndexedDB
+        if (marketplaceCode) {
+          transactions = await DB.getTransactionsByMarketplace(marketplaceCode);
+        } else {
+          transactions = await DB.getAllTransactions();
+        }
       }
 
       // Enrich transactions with product mapping from Google Sheets
@@ -338,21 +387,80 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
         onDataLoaded(transactions);
       }
     } catch {
-      setError('Veriler yüklenirken hata oluştu');
+      setError('Error loading data');
     } finally {
       setLoading(false);
     }
   };
 
-  // Load all stored data on mount (NEW: marketplace-based auto-load)
+  // Backward compatibility alias
+  const loadDataFromIndexedDB = loadDataFromDatabase;
+
+  // Load all stored data on mount (NEW: Load from PostgreSQL API)
   useEffect(() => {
     const loadAllStoredData = async () => {
       try {
         setLoading(true);
 
-        // Auto-backup disabled - not needed
+        // First try to load from API (PostgreSQL)
+        try {
+          const stats = await fetchTransactionStats();
 
-        // Get all marketplace metadata
+          if (stats.total > 0) {
+            // Convert stats to file format for UI compatibility
+            const files = stats.byMarketplace.map(mp => ({
+              id: mp.marketplace_code,
+              marketplace: mp.marketplace_code,
+              fileName: `${mp.marketplace_code} - ${mp.count} transactions`,
+              uploadDate: new Date(mp.max_date),
+              dataCount: mp.count,
+              dateRange: { start: new Date(mp.min_date), end: new Date(mp.max_date) },
+              sizeInBytes: 0
+            }));
+
+            setStoredFiles(files);
+
+            // Load all transactions from API
+            const response = await fetchTransactions({ limit: 500000 });
+            let allTransactions = convertApiToTransactionData(response.data);
+
+            if (allTransactions.length > 0) {
+              // Enrich transactions with product mapping from PriceLab API
+              allTransactions = await enrichTransactionsWithProductData(allTransactions);
+
+              // EMERGENCY: Prevent loading very large datasets all at once
+              if (allTransactions.length > 200000) {
+                alert(`⚠️ Very large dataset detected (${allTransactions.length} transactions).\n\nTo prevent performance issues, please select a specific country (marketplace) from above.\n\nSuch large data cannot be processed in All mode.`);
+
+                // Still set the data but user must select a marketplace
+                setAllData(allTransactions);
+
+                // Don't auto-select, force user to choose
+                if (stats.byMarketplace.length === 1) {
+                  setMarketplaceCode(stats.byMarketplace[0].marketplace_code as MarketplaceCode);
+                }
+              } else {
+                setAllData(allTransactions);
+
+                // If only one marketplace exists, select it
+                if (stats.byMarketplace.length === 1) {
+                  setMarketplaceCode(stats.byMarketplace[0].marketplace_code as MarketplaceCode);
+                }
+                // Otherwise keep as "Tümü" (null or ALL)
+
+                // Notify parent component (App.tsx) about loaded data
+                if (onDataLoaded) {
+                  onDataLoaded(allTransactions);
+                }
+              }
+            }
+            return; // Successfully loaded from API
+          }
+        } catch (apiError) {
+          console.warn('[TransactionAnalyzer] API load failed, falling back to IndexedDB:', apiError);
+        }
+
+        // Fallback: Load from IndexedDB if API fails or has no data
         const metadataList = await DB.getAllMarketplaceMetadata();
 
         // Convert to file format for UI compatibility
@@ -368,14 +476,17 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
 
         setStoredFiles(files);
 
-        // Load all transactions
+        // Load all transactions from IndexedDB
         if (metadataList.length > 0) {
-          const allTransactions = await DB.getAllTransactions();
+          let allTransactions = await DB.getAllTransactions();
 
           if (allTransactions.length > 0) {
+            // Enrich transactions with product mapping from PriceLab API
+            allTransactions = await enrichTransactionsWithProductData(allTransactions);
+
             // EMERGENCY: Prevent loading very large datasets all at once
             if (allTransactions.length > 200000) {
-              alert(`⚠️ Çok büyük veri seti tespit edildi (${allTransactions.length} işlem).\n\nPerformans sorunlarını önlemek için lütfen yukarıdan belirli bir ülke (marketplace) seçin.\n\nTümü modunda bu kadar büyük veri işlenemez.`);
+              alert(`⚠️ Very large dataset detected (${allTransactions.length} transactions).\n\nTo prevent performance issues, please select a specific country (marketplace) from above.\n\nSuch large data cannot be processed in All mode.`);
 
               // Still set the data but user must select a marketplace
               setAllData(allTransactions);
@@ -436,7 +547,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   // Filters are now independent - no sync needed
 
   const removeMarketplace = async (marketplaceCode: string) => {
-    if (!window.confirm(`${marketplaceCode} marketplace'indeki tüm işlemler silinecek. Emin misiniz?`)) {
+    if (!window.confirm(`All transactions in ${marketplaceCode} marketplace will be deleted. Are you sure?`)) {
       return;
     }
 
@@ -449,7 +560,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
       setStoredFiles(allFiles);
       await loadDataFromIndexedDB();
     } catch (err: any) {
-      setError(`Silme hatası: ${err.message}`);
+      setError(`Delete error: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -473,20 +584,27 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
 
   // NOTE: filteredData does NOT apply fulfillment filter
   // Fulfillment filtering is handled inside calculateAnalytics for proper advertising distribution
+  // OPTIMIZATION: Use pre-grouped dataByMarketplace for O(1) marketplace filtering
   const filteredData = useMemo(() => {
-    return allData.filter(item => {
-      if (dateRange.start && item.date < new Date(dateRange.start)) return false;
-      if (dateRange.end && item.date > new Date(dateRange.end)) return false;
+    // Get pre-filtered data by marketplace (O(1) lookup)
+    const marketplaceData = marketplaceCode
+      ? dataByMarketplace.get(marketplaceCode) || []
+      : dataByMarketplace.get('ALL') || [];
 
-      // Marketplace filtresi - marketplace seçiliyse sadece o marketplace'i göster
-      if (marketplaceCode) {
-        // Yeni yapıda marketplaceCode direkt kullanılabilir
-        if (item.marketplaceCode !== marketplaceCode) return false;
-      }
+    // Only apply date filter if needed
+    if (!dateRange.start && !dateRange.end) {
+      return marketplaceData;
+    }
 
+    const startDate = dateRange.start ? new Date(dateRange.start) : null;
+    const endDate = dateRange.end ? new Date(dateRange.end) : null;
+
+    return marketplaceData.filter(item => {
+      if (startDate && item.date < startDate) return false;
+      if (endDate && item.date > endDate) return false;
       return true;
     });
-  }, [allData, dateRange.start, dateRange.end, marketplaceCode]);
+  }, [dataByMarketplace, dateRange.start, dateRange.end, marketplaceCode]);
 
   // formatDateHuman is now imported from ./transaction-analyzer/helpers.ts
 
@@ -727,10 +845,10 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                 <button
                   onClick={() => setShowFileUpload(!showFileUpload)}
                   className="flex items-center justify-center gap-2 px-4 py-2 min-w-[120px] bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                  title="Excel dosyalarını yükle"
+                  title="Upload Excel files"
                 >
                   <Upload className="w-4 h-4" />
-                  <span className="text-sm font-medium">Yükle</span>
+                  <span className="text-sm font-medium">Upload</span>
                   {showFileUpload ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </button>
 
@@ -739,67 +857,18 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                   <button
                     onClick={() => setShowStoredMarketplaces(!showStoredMarketplaces)}
                     className="flex items-center justify-center gap-2 px-4 py-2 min-w-[120px] bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
-                    title="Kayıtlı marketplaces"
+                    title="Stored marketplaces"
                   >
                     <Database className="w-4 h-4" />
-                    <span className="text-sm font-medium">Kayıtlı ({storedFiles.length})</span>
+                    <span className="text-sm font-medium">Stored ({storedFiles.length})</span>
                     {showStoredMarketplaces ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </button>
                 )}
 
-              {/* Backup Download */}
-              <button
-                onClick={async () => {
-                  try {
-                    await DB.downloadBackupFile();
-                  } catch {
-                    window.alert('❌ Yedekleme indirilirken hata oluştu!');
-                  }
-                }}
-                className="flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
-                title="Verileri JSON olarak indir"
-              >
-                <Download className="w-4 h-4" />
-                <span className="text-sm font-medium">Yedekle</span>
-              </button>
-
-              {/* Backup Restore */}
-              <label
-                className="flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors cursor-pointer"
-                title="JSON yedekten geri yükle"
-              >
-                <FolderUp className="w-4 h-4" />
-                <span className="text-sm font-medium">Geri Yükle</span>
-                <input
-                  type="file"
-                  accept=".json"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-
-                    if (!window.confirm('⚠️ Mevcut veriler silinecek ve yedekten geri yüklenecek. Devam etmek istiyor musunuz?')) {
-                      e.target.value = '';
-                      return;
-                    }
-
-                    try {
-                      const result = await DB.importBackupFile(file);
-                      const total = result.imported.transactions + result.imported.metadata;
-                      window.alert(`✅ Yedek başarıyla yüklendi! ${total} kayıt geri yüklendi. Sayfa yenilenecek...`);
-                      window.location.reload();
-                    } catch {
-                      window.alert('❌ Yedek yüklenirken hata oluştu! Dosya formatını kontrol edin.');
-                    }
-                    e.target.value = '';
-                  }}
-                />
-              </label>
-
               {/* Clear All Data */}
               <button
                 onClick={async () => {
-                  if (window.confirm('⚠️ Tüm veriler silinecek! Devam etmek istiyor musunuz?\n\n- Tüm transactions (IndexedDB)\n- Product mapping cache (localStorage)\n- Sayfa yenilenecek')) {
+                  if (window.confirm('⚠️ All data will be deleted! Are you sure?\n\n- All transactions (IndexedDB)\n- Product mapping cache (localStorage)\n- Page will reload')) {
                     try {
                       // First close any existing DB connections
                       await DB.clearAllData();
@@ -834,23 +903,23 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                       setAllData([]);
                       setStoredFiles([]);
 
-                      window.alert('✅ Tüm veriler temizlendi! Sayfa yenilenecek...');
+                      window.alert('✅ All data cleared! Page will reload...');
 
                       // Force hard reload to clear any cached state
                       window.location.href = window.location.href;
                     } catch (err) {
                       console.error('Clear error:', err);
                       // Even if there's an error, try to reload
-                      window.alert('⚠️ Bazı veriler temizlenemedi, sayfa yenilenecek...');
+                      window.alert('⚠️ Some data could not be cleared, page will reload...');
                       window.location.href = window.location.href;
                     }
                   }
                 }}
                 className="flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                title="Tüm verileri temizle (IndexedDB + Cache)"
+                title="Clear all data (IndexedDB + Cache)"
               >
                 <Trash2 className="w-4 h-4" />
-                <span className="text-sm font-medium">Temizle</span>
+                <span className="text-sm font-medium">Clear</span>
               </button>
               </div>
 
@@ -875,18 +944,6 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                     <span className="text-sm font-medium">Excel</span>
                   </button>
 
-                  <button
-                    onClick={() => setShowAdvancedDashboard(!showAdvancedDashboard)}
-                    className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[120px] rounded-lg transition-colors ${
-                      showAdvancedDashboard
-                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                        : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
-                    }`}
-                    title="Gelişmiş görünümü aç/kapat"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span className="text-sm font-medium">Gelişmiş</span>
-                  </button>
                 </div>
               )}
             </div>
@@ -908,10 +965,10 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                 <label htmlFor="file-upload" className="cursor-pointer">
                   <Upload className="w-12 h-12 text-slate-400 mx-auto mb-3" />
                   <p className="text-lg font-medium text-slate-700 mb-1">
-                    Excel dosyalarını yükleyin
+                    Upload Excel files
                   </p>
                   <p className="text-sm text-slate-500">
-                    Transaction raporlarınızı yükleyin (.xlsx, .xls)
+                    Upload your transaction reports (.xlsx, .xls)
                   </p>
                 </label>
 
@@ -925,7 +982,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                     />
                     <span className="text-sm text-slate-600">
                       <Save className="w-4 h-4 inline mr-1" />
-                      Dosyaları otomatik kaydet
+                      Auto-save files
                     </span>
                   </label>
                 </div>
@@ -939,8 +996,8 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {storedFiles.map((stored) => {
                   const mpConfig = CONFIGS[stored.marketplace as MarketplaceCode];
-                  const dateStart = new Date(stored.dateRange.start).toLocaleDateString('tr-TR');
-                  const dateEnd = new Date(stored.dateRange.end).toLocaleDateString('tr-TR');
+                  const dateStart = new Date(stored.dateRange.start).toLocaleDateString('en-US');
+                  const dateEnd = new Date(stored.dateRange.end).toLocaleDateString('en-US');
 
                   return (
                     <div
@@ -964,7 +1021,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                         <button
                           onClick={() => removeMarketplace(stored.marketplace)}
                           className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Bu marketplace'i sil"
+                          title="Delete this marketplace"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -972,7 +1029,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
 
                       <div className="space-y-2 mt-4">
                         <div className="flex items-center justify-between py-2 border-t border-slate-100">
-                          <span className="text-xs text-slate-500">İşlem Sayısı</span>
+                          <span className="text-xs text-slate-500">Transaction Count</span>
                           <span className="text-sm font-semibold text-slate-800">
                             {stored.dataCount.toLocaleString()}
                           </span>
@@ -999,7 +1056,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
           {loading && (
             <div className="mt-4 flex items-center gap-2 text-blue-600">
               <RefreshCw className="w-4 h-4 animate-spin" />
-              <span>Dosyalar işleniyor...</span>
+              <span>Processing files...</span>
             </div>
           )}
 
@@ -1048,8 +1105,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
               <RefreshCw className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
-              <p className="text-lg font-medium text-slate-700">Analiz ediliyor...</p>
-              <p className="text-sm text-slate-500 mt-2">{allData.length} kayıt işleniyor</p>
+              <p className="text-lg font-medium text-slate-700">Analyzing...</p>
             </div>
           </div>
         )}
@@ -1078,23 +1134,36 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
             </p>
           </div>
 
-            {/* Advanced Dashboard (v1.5) */}
-            {showAdvancedDashboard && (
-              <div className="mb-6 no-print">
-                <AdvancedDashboard
-                  analytics={analytics}
-                  comparisonAnalytics={comparisonAnalytics}
-                  filteredData={filteredData}
-                  comparisonFilteredData={comparisonFilteredData}
-                  selectedFulfillment={selectedFulfillment as 'all' | 'FBA' | 'FBM'}
-                  currency={config?.currencySymbol || '$'}
-                  isLoading={loading}
-                  dateRange={dateRange}
-                  comparisonMode={comparisonMode}
-                  onComparisonModeChange={setComparisonMode}
-                />
-              </div>
-            )}
+            {/* Unknown Category Types Check */}
+            <div className="no-print">
+              <UnprocessedTransactionsSection
+                transactions={allData}
+                formatMoney={formatMoney}
+              />
+            </div>
+
+            {/* Data Consistency Check Banner */}
+            <div className="mb-4 no-print">
+              <DataConsistencyCheck
+                transactions={allData}
+                analyzerMetrics={{
+                  transaction: {
+                    totalRevenue: analytics?.totalSales || 0,
+                    totalOrders: analytics?.totalOrders || 0,
+                    advertisingCost: analytics?.displayAdvertisingCost || 0,
+                    refundCount: analytics?.totalRefunds || 0,
+                    marketplace: marketplaceCode || 'all',
+                    dateRange: {
+                      start: dateRange.start || null,
+                      end: dateRange.end || null
+                    }
+                  }
+                }}
+                marketplace={marketplaceCode || 'all'}
+                startDate={dateRange.start || null}
+                endDate={dateRange.end || null}
+              />
+            </div>
 
             {/* Summary Cards - Extracted Component */}
             <SummaryCards
@@ -1107,7 +1176,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 print-single-col">
               <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
                 <h3 className="text-lg font-semibold text-slate-800 mb-4 print-header">
-                  Gelir Dağılımı (Order Sales = 100%)
+                  Income Distribution (Order Sales = 100%)
                 </h3>
                 <PieChart
                   data={analytics.pieChartData.values}
@@ -1162,16 +1231,16 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                 />
                 <div className="mt-4 pt-4 border-t border-slate-200">
                   <p className="text-xs text-slate-500">
-                    Toplam Order Sales: {formatMoney(analytics.totalSales)}
+                    Total Order Sales: {formatMoney(analytics.totalSales)}
                   </p>
                 </div>
               </div>
 
-              {/* Ülke Bazlı Satış Dağılımı - Sadece Tümü modunda */}
+              {/* Sales by Country - Only in All mode */}
               {!marketplaceCode && analytics.marketplaceSalesDistribution && Object.keys(analytics.marketplaceSalesDistribution).length > 0 && (
                 <div className="bg-white rounded-xl shadow-sm p-6 print-card print-block">
                   <h3 className="text-lg font-semibold text-slate-800 mb-4 print-header">
-                    Ülke Bazlı Satış Dağılımı
+                    Sales by Country
                   </h3>
                   <div className="space-y-3">
                     {Object.entries(analytics.marketplaceSalesDistribution)
@@ -1301,10 +1370,10 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
               )}
             </div>
 
-            {/* Her Ülke İçin Maliyet Dağılımı - Sadece Tümü modunda */}
+            {/* Cost Distribution by Country - Only in All mode */}
             {!marketplaceCode && analytics.marketplacePieCharts && Object.keys(analytics.marketplacePieCharts).length > 0 && (
               <div className="mb-6 print:break-inside-avoid">
-                <h2 className="text-xl font-semibold text-slate-800 mb-4 print:text-base print:mb-2">Ülke Bazlı Maliyet Dağılımı</h2>
+                <h2 className="text-xl font-semibold text-slate-800 mb-4 print:text-base print:mb-2">Cost Distribution by Country</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 print:grid-cols-2 print:gap-2">
                   {Object.entries(analytics.marketplacePieCharts)
                     .sort((a, b) => (b[1] as any).totalSales - (a[1] as any).totalSales)
@@ -1441,10 +1510,10 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
           <div className="bg-white rounded-xl shadow-sm p-12 text-center">
             <FileSpreadsheet className="w-16 h-16 text-slate-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-slate-800 mb-2">
-              Henüz dosya yüklenmedi
+              No files uploaded yet
             </h3>
             <p className="text-slate-600">
-              Başlamak için yukarıdan transaction raporlarınızı yükleyin
+              Upload your transaction reports from above to get started
             </p>
           </div>
         )}
@@ -1456,10 +1525,10 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-slate-800">
-                {comparisonDetailType === 'adjustments' && 'Adjustment Karşılaştırması'}
-                {comparisonDetailType === 'inventory' && 'FBA Inventory Fee Karşılaştırması'}
-                {comparisonDetailType === 'service' && 'Service Fee Karşılaştırması'}
-                {comparisonDetailType === 'fbaCostBreakdown' && 'FBA Cost Kırılımı Karşılaştırması'}
+                {comparisonDetailType === 'adjustments' && 'Adjustment Comparison'}
+                {comparisonDetailType === 'inventory' && 'FBA Inventory Fee Comparison'}
+                {comparisonDetailType === 'service' && 'Service Fee Comparison'}
+                {comparisonDetailType === 'fbaCostBreakdown' && 'FBA Cost Breakdown Comparison'}
               </h2>
               <button
                 onClick={() => setComparisonDetailOpen(false)}
@@ -1472,7 +1541,7 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
             </div>
 
             <div className="p-6">
-              <p className="text-sm text-slate-600 mb-4">Mevcut dönem vs {comparisonAnalytics.label}</p>
+              <p className="text-sm text-slate-600 mb-4">Current period vs {comparisonAnalytics.label}</p>
 
               {/* Detailed Cost Breakdown */}
               <div className="space-y-3">
@@ -1498,16 +1567,16 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                       item.date >= compRange.start && item.date <= compRange.end && item.categoryType === 'Adjustment'
                     );
 
-                    // Group by description
+                    // Group by normalized description
                     const currentGroups: Record<string, number> = {};
                     currentData.forEach(item => {
-                      const key = item.description || 'Other';
+                      const key = normalizeAdjustmentDescription(item.description || 'Other');
                       currentGroups[key] = (currentGroups[key] || 0) + item.total;
                     });
 
                     const prevGroups: Record<string, number> = {};
                     prevData.forEach(item => {
-                      const key = item.description || 'Other';
+                      const key = normalizeAdjustmentDescription(item.description || 'Other');
                       prevGroups[key] = (prevGroups[key] || 0) + item.total;
                     });
 
@@ -1531,13 +1600,13 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
 
                     const currentGroups: Record<string, number> = {};
                     currentData.forEach(item => {
-                      const key = item.description || 'Partner Carrier Fee';
+                      const key = normalizeInventoryFeeDescription(item.description, item.orderId);
                       currentGroups[key] = (currentGroups[key] || 0) + item.total;
                     });
 
                     const prevGroups: Record<string, number> = {};
                     prevData.forEach(item => {
-                      const key = item.description || 'Partner Carrier Fee';
+                      const key = normalizeInventoryFeeDescription(item.description, item.orderId);
                       prevGroups[key] = (prevGroups[key] || 0) + item.total;
                     });
 
@@ -1679,11 +1748,11 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="bg-blue-50 rounded p-3">
-                            <p className="text-xs text-blue-600 mb-1">Mevcut Dönem</p>
+                            <p className="text-xs text-blue-600 mb-1">Current Period</p>
                             <p className="text-lg font-bold text-blue-900">{formatMoney(item.current)}</p>
                           </div>
                           <div className="bg-slate-100 rounded p-3">
-                            <p className="text-xs text-slate-600 mb-1">Önceki Dönem</p>
+                            <p className="text-xs text-slate-600 mb-1">Previous Period</p>
                             <p className="text-lg font-bold text-slate-700">{formatMoney(item.prev)}</p>
                           </div>
                         </div>

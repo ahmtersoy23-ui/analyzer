@@ -16,6 +16,9 @@ interface CoverageStats {
   revenueCoveragePercent: number;
   gradeResellCount: number;
   gradeResellRevenue: number;
+  shippingIssueCount?: number;
+  shippingIssueRevenue?: number;
+  shippingIssueSkus?: SKUProfitAnalysis[];
 }
 
 // Update for a single SKU's cost/size data (including override fields for FBM)
@@ -202,7 +205,7 @@ const EditableRow: React.FC<{
       <td className="px-3 py-1.5 text-center text-[10px] text-slate-500">{sku.fulfillment}</td>
       <td className="px-3 py-1.5 text-center">
         {existingCost !== null ? (
-          <span className="text-green-700">${existingCost.toFixed(2)}</span>
+          <span className="text-green-700">${Number(existingCost).toFixed(2)}</span>
         ) : (
           <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px]">Eksik</span>
         )}

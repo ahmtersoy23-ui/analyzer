@@ -353,7 +353,7 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
               Category
             </button>
           </div>
-          {/* Toplam / Birim Toggle - Sadece SKU ve Name için */}
+          {/* Total / Per Unit Toggle - Only for SKU and Name views */}
           {(detailsViewMode === 'sku' || detailsViewMode === 'name') && (
             <div className="inline-flex items-center rounded-full bg-slate-100 p-0.5 text-xs">
               <button
@@ -364,7 +364,7 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                Toplam
+                Total
               </button>
               <button
                 onClick={() => setShowPerUnit(true)}
@@ -374,7 +374,7 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                Birim
+                Per Unit
               </button>
             </div>
           )}

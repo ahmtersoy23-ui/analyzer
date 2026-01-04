@@ -223,14 +223,7 @@ export const extractCostDataFromTransactions = (
     }
   });
 
-  const result = Array.from(skuMap.values());
-
-  // Debug logging
-  const withCost = result.filter(r => r.cost !== null).length;
-  const withSize = result.filter(r => r.size !== null).length;
-  console.log(`[extractCostDataFromTransactions] Extracted ${result.length} SKUs: ${withCost} with cost, ${withSize} with size`);
-
-  return result;
+  return Array.from(skuMap.values());
 };
 
 /**

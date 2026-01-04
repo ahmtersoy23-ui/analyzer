@@ -36,6 +36,20 @@ interface ProductAnalyzerProps {
 // HELPER FUNCTIONS (most moved to utils/formatters.ts)
 // ============================================================================
 
+/**
+ * Get dateOnly string from transaction, with fallback to Date object
+ * Ensures date filtering works even for older data without dateOnly field
+ */
+const getDateOnly = (t: TransactionData): string => {
+  if (t.dateOnly) return t.dateOnly;
+  if (t.date) {
+    // Derive YYYY-MM-DD from Date object (local timezone)
+    const d = t.date;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  return '';
+};
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -130,8 +144,8 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
     // Step 1: Get ALL transactions for date + marketplace (no fulfillment filter)
     // This is for calculating the advertising percentage
     const allTransactionsForPeriod = transactionData.filter(t => {
-      // Date filtering - use dateOnly string comparison (YYYY-MM-DD)
-      if (!isDateInRange(t.dateOnly, startDate, endDate)) return false;
+      // Date filtering - use dateOnly string comparison (YYYY-MM-DD), with fallback
+      if (!isDateInRange(getDateOnly(t), startDate, endDate)) return false;
       // Marketplace filtering
       if (selectedMarketplace !== 'all' && t.marketplaceCode !== selectedMarketplace) return false;
       return true;
@@ -187,8 +201,8 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
       // SKU validation
       if (!t.sku) return false;
 
-      // Date filtering - use dateOnly string comparison (YYYY-MM-DD)
-      if (!isDateInRange(t.dateOnly, startDate, endDate)) return false;
+      // Date filtering - use dateOnly string comparison (YYYY-MM-DD), with fallback
+      if (!isDateInRange(getDateOnly(t), startDate, endDate)) return false;
 
       // Marketplace filtering
       if (selectedMarketplace !== 'all' && t.marketplaceCode !== selectedMarketplace) return false;
@@ -217,8 +231,8 @@ const ProductAnalyzer: React.FC<ProductAnalyzerProps> = ({
     // Filter by date and marketplace only (no fulfillment filter)
     const allTransactionsForPeriod = transactionData.filter(t => {
       if (!t.sku) return false;
-      // Date filtering - use dateOnly string comparison (YYYY-MM-DD)
-      if (!isDateInRange(t.dateOnly, startDate, endDate)) return false;
+      // Date filtering - use dateOnly string comparison (YYYY-MM-DD), with fallback
+      if (!isDateInRange(getDateOnly(t), startDate, endDate)) return false;
       // Marketplace filtering
       if (selectedMarketplace !== 'all' && t.marketplaceCode !== selectedMarketplace) return false;
       return true;

@@ -241,14 +241,16 @@ export const getShippingRate = (
 // US FBM için kargo hesapla
 // LOCAL: TR'den US deposuna gönderim (desi * gemi bedeli) + US içi kargo
 // BOTH: LOCAL hesaplaması ile TR'den direkt gönderimin ortalaması
-// Returns found=false if any required rate is missing
+// Returns:
+//   - found: true if we can calculate any shipping cost
+//   - partial: true if some rates are missing (e.g., US-US rate not found but warehouse cost available)
 // currency: Birden fazla para birimi karıştığında USD varsayılır (fbaShippingPerDesi USD)
 export const getUSFBMShippingRate = (
   rates: ShippingRateTable,
   desi: number,
   mode: FBMShippingMode,
   fbaShippingPerDesi: number = 0 // TR'den US deposuna gemi bedeli ($/desi)
-): { rate: number; found: boolean; breakdown: { tr: number; local: number }; currency: ShippingCurrency } => {
+): { rate: number; found: boolean; partial: boolean; breakdown: { tr: number; local: number }; currency: ShippingCurrency } => {
   const trResult = getShippingRate(rates, 'US-TR', desi); // TR'den direkt müşteriye
   const usResult = getShippingRate(rates, 'US-US', desi); // US içi kargo
 
@@ -260,17 +262,34 @@ export const getUSFBMShippingRate = (
   // Karışık modlarda USD varsayıyoruz
   switch (mode) {
     case 'TR':
-      return { rate: trResult.rate, found: trResult.found, breakdown: { tr: trResult.rate, local: 0 }, currency: trResult.currency };
+      return { rate: trResult.rate, found: trResult.found, partial: false, breakdown: { tr: trResult.rate, local: 0 }, currency: trResult.currency };
     case 'LOCAL':
       // LOCAL = desi * gemi bedeli + US içi kargo (ikisi de USD varsayılıyor)
-      return { rate: localTotal, found: usResult.found, breakdown: { tr: 0, local: localTotal }, currency: 'USD' };
+      // US içi rate bulunamasa bile gemi bedeli varsa found=true (minimum maliyet)
+      // partial=true if US-US rate is missing (incomplete calculation)
+      const localFound = toWarehouseCost > 0 || usResult.found;
+      const localPartial = toWarehouseCost > 0 && !usResult.found; // Gemi bedeli var ama US içi yok
+      return { rate: localTotal, found: localFound, partial: localPartial, breakdown: { tr: 0, local: localTotal }, currency: 'USD' };
     case 'BOTH':
       // BOTH = (LOCAL hesaplaması + TR kargo) / 2 - karışık, USD varsay
-      const bothFound = trResult.found && usResult.found;
-      const avgRate = (localTotal + trResult.rate) / 2;
-      return { rate: avgRate, found: bothFound, breakdown: { tr: trResult.rate, local: localTotal }, currency: 'USD' };
+      // En az biri (TR veya LOCAL) varsa hesapla
+      const hasTR = trResult.found;
+      const hasLocal = toWarehouseCost > 0 || usResult.found;
+      const localIsPartial = toWarehouseCost > 0 && !usResult.found;
+      if (hasTR && hasLocal) {
+        // İkisi de var - ortalama al
+        const avgRate = (localTotal + trResult.rate) / 2;
+        return { rate: avgRate, found: true, partial: localIsPartial, breakdown: { tr: trResult.rate, local: localTotal }, currency: 'USD' };
+      } else if (hasTR) {
+        // Sadece TR var - LOCAL tamamen eksik
+        return { rate: trResult.rate, found: true, partial: true, breakdown: { tr: trResult.rate, local: 0 }, currency: trResult.currency };
+      } else if (hasLocal) {
+        // Sadece LOCAL var - TR eksik
+        return { rate: localTotal, found: true, partial: true, breakdown: { tr: 0, local: localTotal }, currency: 'USD' };
+      }
+      return { rate: 0, found: false, partial: false, breakdown: { tr: 0, local: 0 }, currency: 'USD' };
     default:
-      return { rate: trResult.rate, found: trResult.found, breakdown: { tr: trResult.rate, local: 0 }, currency: trResult.currency };
+      return { rate: trResult.rate, found: trResult.found, partial: false, breakdown: { tr: trResult.rate, local: 0 }, currency: trResult.currency };
   }
 };
 

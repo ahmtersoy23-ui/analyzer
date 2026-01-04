@@ -27,6 +27,7 @@ export interface DetailedAnalytics extends Analytics {
   fbaTransactionGroups: Record<string, GroupData>;
   amazonFeesGroups: Record<string, GroupData>;
   chargebackGroups: Record<string, GroupData>;
+  shippingServicesGroups: Record<string, GroupData>;
 
   // Totals
   adjustmentTotal: number;
@@ -34,6 +35,7 @@ export interface DetailedAnalytics extends Analytics {
   serviceTotal: number;
   chargebackTotal: number;
   liquidationsTotal: number;
+  shippingServicesTotal: number;
   totalSellingFees: number;
   totalFBACost: number;
   totalFBMCost: number;
@@ -116,6 +118,14 @@ const convertTransactionValue = (
   return convertCurrency(value, sourceCurrency, 'USD');
 };
 
+// Analytics cache for performance optimization
+const analyticsCache = new Map<string, { result: DetailedAnalytics; timestamp: number }>();
+const CACHE_TTL = 60000; // 1 minute cache
+
+const getCacheKey = (options: AnalyticsOptions): string => {
+  return `${options.marketplaceCode || 'ALL'}_${options.selectedFulfillment}_${options.dateRange.start?.toISOString() || ''}_${options.dateRange.end?.toISOString() || ''}_${options.data.length}`;
+};
+
 /**
  * Calculate comprehensive analytics for transaction data
  * This is the main analytics engine extracted from TransactionAnalyzer
@@ -131,49 +141,249 @@ export const calculateAnalytics = (options: AnalyticsOptions): DetailedAnalytics
 
   if (data.length === 0) return null;
 
-  // Filter data by date range and marketplace
-  let allDataForCosts = Calc.filterByDateRange(data, dateRange.start, dateRange.end);
-  allDataForCosts = Calc.filterByMarketplace(allDataForCosts, marketplaceCode);
+  // Check cache first
+  const cacheKey = getCacheKey(options);
+  const cached = analyticsCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.result;
+  }
 
-  // Filter for orders/refunds based on fulfillment
-  const allOrders = allDataForCosts.filter(d => d.categoryType === 'Order');
-  const orders = Calc.filterByFulfillment(allOrders, selectedFulfillment);
+  // ============================================
+  // OPTIMIZED SINGLE-PASS CALCULATION
+  // Process all data in one loop for maximum performance
+  // ============================================
 
-  const allRefunds = allDataForCosts.filter(d => d.categoryType === 'Refund');
-  const refunds = Calc.filterByFulfillment(allRefunds, selectedFulfillment);
+  // Pre-filter by date range and marketplace
+  const startTime = dateRange.start?.getTime();
+  const endTime = dateRange.end?.getTime();
 
-  // Disbursements (with currency conversion for "All" view)
-  const disbursements = allDataForCosts.filter(d => d.categoryType === 'Disbursement');
-  const totalDisbursement = disbursements.reduce((sum, t) =>
-    sum + Math.abs(convertTransactionValue(t.total, t, marketplaceCode)), 0);
+  // Accumulators - initialized once
+  let totalDisbursement = 0;
+  let totalNet = 0;
+  let totalSales = 0, fbaOrderSales = 0, fbmOrderSales = 0;
+  let fbaOrderNet = 0, fbmOrderNet = 0;
+  let totalFbaFees = 0, fbaSellingFees = 0, fbmSellingFees = 0, fbaOrderFees = 0;
+  let advertisingCostTotal = 0, serviceTotal = 0;
+  let adjustmentTotal = 0, inventoryTotal = 0;
+  let totalAllFbaSales = 0, totalAllFbmSales = 0;
 
-  // Order breakdown
-  const fbaOrders = orders.filter(d => d.fulfillment === 'FBA');
-  const fbmOrders = orders.filter(d => d.fulfillment === 'FBM');
+  // Arrays for items that need further processing
+  const orders: TransactionData[] = [];
+  const refunds: TransactionData[] = [];
+  const disbursements: TransactionData[] = [];
+  const fbaOrders: TransactionData[] = [];
+  const fbmOrders: TransactionData[] = [];
+  const allOrders: TransactionData[] = [];
 
-  // Sales calculations (with currency conversion for "All" view)
-  const totalSales = orders.reduce((sum, t) =>
-    sum + convertTransactionValue(t.productSales, t, marketplaceCode), 0);
-  const fbaOrderSales = fbaOrders.reduce((sum, t) =>
-    sum + convertTransactionValue(t.productSales, t, marketplaceCode), 0);
-  const fbmOrderSales = fbmOrders.reduce((sum, t) =>
-    sum + convertTransactionValue(t.productSales, t, marketplaceCode), 0);
+  // Group accumulators
+  const rawAdjustmentGroups: Record<string, GroupData> = {};
+  const rawInventoryGroups: Record<string, GroupData> = {};
+  const rawServiceGroups: Record<string, GroupData> = {};
+  const rawOthersGroups: Record<string, GroupData> = {};
+  const rawFbaCustomerReturnGroups: Record<string, GroupData> = {};
+  const rawFbaTransactionGroups: Record<string, GroupData> = {};
+  const rawAmazonFeesGroups: Record<string, GroupData> = {};
+  const rawChargebackGroups: Record<string, GroupData> = {};
+  const rawShippingServicesGroups: Record<string, GroupData> = {};
 
-  // Net calculations (with currency conversion for "All" view)
-  const totalNet = allDataForCosts
-    .filter(d => d.categoryType !== 'Disbursement')
-    .reduce((sum, t) => sum + convertTransactionValue(t.total, t, marketplaceCode), 0);
+  // Additional accumulators
+  let chargebackTotal = 0;
+  let shippingServicesTotal = 0;
+  let liquidationsTotal = 0;
+  let totalVAT = 0;
+  let fbaCustomerReturnTotal = 0;
+  let fbaTransactionFeesTotal = 0;
 
-  const fbaOrderNet = fbaOrders.reduce((sum, t) =>
-    sum + convertTransactionValue(t.total, t, marketplaceCode), 0);
-  const fbmOrderNet = fbmOrders.reduce((sum, t) =>
-    sum + convertTransactionValue(t.total, t, marketplaceCode), 0);
+  // Filtered data for later processing
+  const allDataForCosts: TransactionData[] = [];
 
-  // Refund calculations (with currency conversion for "All" view)
+  // SINGLE PASS through all data
+  for (let i = 0; i < data.length; i++) {
+    const d = data[i];
+
+    // Date filter
+    if (startTime || endTime) {
+      const itemTime = d.date?.getTime();
+      if (!itemTime) continue;
+      if (startTime && itemTime < startTime) continue;
+      if (endTime && itemTime > endTime) continue;
+    }
+
+    // Marketplace filter
+    if (marketplaceCode && d.marketplaceCode !== marketplaceCode) continue;
+
+    // Item passed all filters - add to allDataForCosts
+    allDataForCosts.push(d);
+
+    const convertedTotal = convertTransactionValue(d.total, d, marketplaceCode);
+    const convertedSales = convertTransactionValue(d.productSales, d, marketplaceCode);
+    const convertedFbaFees = convertTransactionValue(Math.abs(d.fbaFees), d, marketplaceCode);
+    const convertedSellingFees = convertTransactionValue(Math.abs(d.sellingFees), d, marketplaceCode);
+
+    const cat = d.categoryType;
+    const isFBA = d.fulfillment === 'FBA';
+    const isFBM = d.fulfillment === 'FBM';
+    const matchesFulfillment = selectedFulfillment === 'all' ||
+      (selectedFulfillment === 'FBA' && isFBA) ||
+      (selectedFulfillment === 'FBM' && isFBM);
+
+    // Disbursement
+    if (cat === 'Disbursement') {
+      disbursements.push(d);
+      totalDisbursement += Math.abs(convertedTotal);
+    } else {
+      // Total net excludes disbursements
+      totalNet += convertedTotal;
+    }
+
+    // Orders
+    if (cat === 'Order') {
+      allOrders.push(d);
+      if (isFBA) {
+        totalAllFbaSales += convertedSales;
+      } else if (isFBM) {
+        totalAllFbmSales += convertedSales;
+      }
+
+      if (matchesFulfillment) {
+        orders.push(d);
+        totalSales += convertedSales;
+        totalFbaFees += convertedFbaFees;
+
+        if (isFBA) {
+          fbaOrders.push(d);
+          fbaOrderSales += convertedSales;
+          fbaOrderNet += convertedTotal;
+          fbaSellingFees += convertedSellingFees;
+          fbaOrderFees += convertedFbaFees;
+        } else if (isFBM) {
+          fbmOrders.push(d);
+          fbmOrderSales += convertedSales;
+          fbmOrderNet += convertedTotal;
+          fbmSellingFees += convertedSellingFees;
+        }
+      }
+    }
+
+    // Refunds
+    if (cat === 'Refund' && matchesFulfillment) {
+      refunds.push(d);
+    }
+
+    // Adjustments
+    if (cat === 'Adjustment') {
+      adjustmentTotal += convertedTotal;
+      const key = Calc.normalizeAdjustmentDescription(d.description || 'Other');
+      if (!rawAdjustmentGroups[key]) rawAdjustmentGroups[key] = { count: 0, total: 0 };
+      rawAdjustmentGroups[key].count++;
+      rawAdjustmentGroups[key].total += convertedTotal;
+    }
+
+    // FBA Inventory Fee
+    if (cat === 'FBA Inventory Fee') {
+      inventoryTotal += convertedTotal;
+      const key = Calc.normalizeInventoryFeeDescription(d.description, d.orderId);
+      if (!rawInventoryGroups[key]) rawInventoryGroups[key] = { count: 0, total: 0 };
+      rawInventoryGroups[key].count++;
+      rawInventoryGroups[key].total += convertedTotal;
+    }
+
+    // Service Fee (including advertising)
+    if (cat === 'Service Fee') {
+      const absTotal = convertTransactionValue(Math.abs(d.total), d, marketplaceCode);
+      if (Calc.isAdvertisingTransaction(d.descriptionLower)) {
+        advertisingCostTotal += absTotal;
+      } else {
+        serviceTotal += convertedTotal;
+        const key = d.description || 'Other';
+        if (!rawServiceGroups[key]) rawServiceGroups[key] = { count: 0, total: 0 };
+        rawServiceGroups[key].count++;
+        rawServiceGroups[key].total += convertedTotal;
+      }
+    }
+
+    // Others
+    if (cat === 'Others') {
+      const key = d.description || 'Other';
+      if (!rawOthersGroups[key]) rawOthersGroups[key] = { count: 0, total: 0 };
+      rawOthersGroups[key].count++;
+      rawOthersGroups[key].total += convertedTotal;
+    }
+
+    // FBA Customer Return Fee
+    if (cat === 'FBA Customer Return Fee') {
+      fbaCustomerReturnTotal += convertedTotal;
+      const key = d.description || 'Customer Return Fee';
+      if (!rawFbaCustomerReturnGroups[key]) rawFbaCustomerReturnGroups[key] = { count: 0, total: 0 };
+      rawFbaCustomerReturnGroups[key].count++;
+      rawFbaCustomerReturnGroups[key].total += convertedTotal;
+    }
+
+    // FBA Transaction Fee
+    if (cat === 'FBA Transaction Fee') {
+      fbaTransactionFeesTotal += convertedTotal;
+      const key = d.description || 'Transaction Fee';
+      if (!rawFbaTransactionGroups[key]) rawFbaTransactionGroups[key] = { count: 0, total: 0 };
+      rawFbaTransactionGroups[key].count++;
+      rawFbaTransactionGroups[key].total += convertedTotal;
+    }
+
+    // Amazon Fees
+    if (cat === 'Amazon Fees') {
+      const key = d.description || 'Other';
+      if (!rawAmazonFeesGroups[key]) rawAmazonFeesGroups[key] = { count: 0, total: 0 };
+      rawAmazonFeesGroups[key].count++;
+      rawAmazonFeesGroups[key].total += convertedTotal;
+    }
+
+    // Chargeback Refund
+    if (cat === 'Chargeback Refund') {
+      chargebackTotal += convertedTotal;
+      const key = d.sku || 'Unknown SKU';
+      if (!rawChargebackGroups[key]) rawChargebackGroups[key] = { count: 0, total: 0 };
+      rawChargebackGroups[key].count++;
+      rawChargebackGroups[key].total += convertedTotal;
+    }
+
+    // Shipping Services (multi-language)
+    if (cat === 'Shipping Services' || cat === 'Delivery Services' ||
+        cat === 'Lieferdienste' || cat === 'Services de livraison' ||
+        cat === 'Servizi di consegna' || cat === 'Servicios de entrega') {
+      shippingServicesTotal += convertedTotal;
+      const key = d.description || 'Shipping';
+      if (!rawShippingServicesGroups[key]) rawShippingServicesGroups[key] = { count: 0, total: 0 };
+      rawShippingServicesGroups[key].count++;
+      rawShippingServicesGroups[key].total += convertedTotal;
+    }
+
+    // Liquidations
+    if (cat === 'Liquidations') {
+      liquidationsTotal += convertedTotal;
+    }
+
+    // VAT from orders (already in orders loop but need for all orders)
+    if (cat === 'Order' && matchesFulfillment) {
+      totalVAT += convertTransactionValue(d.vat, d, marketplaceCode);
+    }
+  }
+
+  // Consolidate all groups
+  const adjustmentGroups = Calc.consolidateSmallGroups(rawAdjustmentGroups, 10);
+  const inventoryGroups = Calc.consolidateSmallGroups(rawInventoryGroups, 10);
+  const serviceGroups = Calc.consolidateSmallGroups(rawServiceGroups, 10);
+  const othersGroups = rawOthersGroups;
+  const fbaCustomerReturnGroups = rawFbaCustomerReturnGroups;
+  const fbaTransactionGroups = rawFbaTransactionGroups;
+  const amazonFeesGroups = rawAmazonFeesGroups;
+  const chargebackGroups = rawChargebackGroups;
+  const shippingServicesGroups = rawShippingServicesGroups;
+
+  // Derived values
+  const totalSellingFees = fbaSellingFees + fbmSellingFees;
+  const totalAllSales = totalAllFbaSales + totalAllFbmSales;
+
+  // Refund calculations
   const refundRate = orders.length > 0 ? (refunds.length / orders.length * 100) : 0;
-
-  // FIXED: Use calculateRefundLoss for consistent calculation across main chart and country charts
-  // This function uses 'total' (net impact) and applies correct recovery rate per marketplace
   const refundsWithConversion = refunds.map(r => ({
     ...r,
     total: convertTransactionValue(r.total, r, marketplaceCode),
@@ -181,60 +391,6 @@ export const calculateAnalytics = (options: AnalyticsOptions): DetailedAnalytics
   }));
   const { totalRefundAmount, recoveredRefunds, actualRefundLoss } =
     Calc.calculateRefundLoss(refundsWithConversion, marketplaceCode, config);
-
-  // Fee calculations (with currency conversion for "All" view)
-  const totalFbaFees = orders.reduce((sum, t) =>
-    sum + convertTransactionValue(Math.abs(t.fbaFees), t, marketplaceCode), 0);
-  const fbaSellingFees = fbaOrders.reduce((sum, t) =>
-    sum + convertTransactionValue(Math.abs(t.sellingFees), t, marketplaceCode), 0);
-  const fbmSellingFees = fbmOrders.reduce((sum, t) =>
-    sum + convertTransactionValue(Math.abs(t.sellingFees), t, marketplaceCode), 0);
-  const fbaOrderFees = fbaOrders.reduce((sum, t) =>
-    sum + convertTransactionValue(Math.abs(t.fbaFees), t, marketplaceCode), 0);
-  const totalSellingFees = fbaSellingFees + fbmSellingFees;
-
-  // Group calculations (with currency conversion for "All" view)
-  const adjustments = allDataForCosts.filter(d => d.categoryType === 'Adjustment');
-  const adjustmentGroups = Calc.groupTransactions(adjustments, d => d.description || 'Other');
-  const adjustmentTotal = adjustments.reduce((sum, t) =>
-    sum + convertTransactionValue(t.total, t, marketplaceCode), 0);
-
-  const fbaInventoryFees = allDataForCosts.filter(d => d.categoryType === 'FBA Inventory Fee');
-  const inventoryGroups = Calc.groupTransactions(
-    fbaInventoryFees,
-    d => Calc.normalizeInventoryFeeDescription(d.description)
-  );
-  const inventoryTotal = fbaInventoryFees.reduce((sum, t) =>
-    sum + convertTransactionValue(t.total, t, marketplaceCode), 0);
-
-  // Service fees and advertising (with currency conversion for "All" view)
-  const serviceFees = allDataForCosts.filter(d => d.categoryType === 'Service Fee');
-  const serviceGroups: Record<string, GroupData> = {};
-  let advertisingCostTotal = 0;
-  let serviceTotal = 0;
-
-  serviceFees.forEach(item => {
-    const convertedTotal = convertTransactionValue(Math.abs(item.total), item, marketplaceCode);
-    if (Calc.isAdvertisingTransaction(item.descriptionLower)) {
-      advertisingCostTotal += convertedTotal;
-    } else {
-      const key = item.description || 'Other';
-      if (!serviceGroups[key]) serviceGroups[key] = { count: 0, total: 0 };
-      serviceGroups[key].count++;
-      serviceGroups[key].total += convertTransactionValue(item.total, item, marketplaceCode);
-      serviceTotal += convertTransactionValue(item.total, item, marketplaceCode);
-    }
-  });
-
-  // Advertising cost distribution - use ALL orders (not filtered) for ratio calculation
-  // Apply currency conversion for "All" view
-  const allFbaOrders = allOrders.filter(d => d.fulfillment === 'FBA');
-  const allFbmOrders = allOrders.filter(d => d.fulfillment === 'FBM');
-  const totalAllFbaSales = allFbaOrders.reduce((sum, t) =>
-    sum + convertTransactionValue(t.productSales, t, marketplaceCode), 0);
-  const totalAllFbmSales = allFbmOrders.reduce((sum, t) =>
-    sum + convertTransactionValue(t.productSales, t, marketplaceCode), 0);
-  const totalAllSales = totalAllFbaSales + totalAllFbmSales;
 
   const fbaAdvertisingCost = totalAllSales > 0 ? (advertisingCostTotal * totalAllFbaSales / totalAllSales) : 0;
   const fbmAdvertisingCost = totalAllSales > 0 ? (advertisingCostTotal * totalAllFbmSales / totalAllSales) : 0;
@@ -261,35 +417,8 @@ export const calculateAnalytics = (options: AnalyticsOptions): DetailedAnalytics
     displayAdvertisingCost = fbmAdvertisingCost;
   }
 
-  // Other fee groups
-  const others = allDataForCosts.filter(d => d.categoryType === 'Others');
-  const othersGroups = Calc.groupTransactions(others, d => d.description || 'Other');
-
-  const fbaCustomerReturnFees = allDataForCosts.filter(d => d.categoryType === 'FBA Customer Return Fee');
-  const fbaCustomerReturnGroups = Calc.groupTransactions(fbaCustomerReturnFees, d => d.description || 'Customer Return Fee');
-
-  const fbaTransactionFeesData = allDataForCosts.filter(d => d.categoryType === 'FBA Transaction Fee');
-  const fbaTransactionGroups = Calc.groupTransactions(fbaTransactionFeesData, d => d.description || 'Transaction Fee');
-
-  const amazonFees = allDataForCosts.filter(d => d.categoryType === 'Amazon Fees');
-  const amazonFeesGroups = Calc.groupTransactions(amazonFees, d => d.description || 'Other');
-
-  const chargebacks = allDataForCosts.filter(d => d.categoryType === 'Chargeback Refund');
-  const chargebackGroups = Calc.groupTransactions(chargebacks, d => d.sku || 'Unknown SKU');
-  const chargebackTotal = chargebacks.reduce((sum, t) =>
-    sum + convertTransactionValue(t.total, t, marketplaceCode), 0);
-
-  // Liquidations (with currency conversion for "All" view)
-  const liquidationsTotal = config.hasLiquidations
-    ? allDataForCosts
-        .filter(d => d.categoryType === 'Liquidations')
-        .reduce((sum, t) => sum + convertTransactionValue(t.total, t, marketplaceCode), 0)
-    : 0;
-
-  // VAT calculation (with currency conversion for "All" view)
-  const totalVAT = config.hasVAT
-    ? orders.reduce((sum, t) => sum + convertTransactionValue(t.vat, t, marketplaceCode), 0)
-    : 0;
+  // VAT: Only count if config has VAT (already calculated in loop)
+  const finalVAT = config.hasVAT ? totalVAT : 0;
 
   // Total costs - conditional based on fulfillment filter
   const totalFBACost = selectedFulfillment === 'FBM' ? 0 : Calc.calculateFBACost(allDataForCosts, config);
@@ -339,19 +468,20 @@ export const calculateAnalytics = (options: AnalyticsOptions): DetailedAnalytics
   const fbaPercentage = totalSales > 0 ? (fbaOrderSales / totalSales) * 100 : 0;
   const fbmPercentage = totalSales > 0 ? (fbmOrderSales / totalSales) * 100 : 0;
 
-  // Additional totals (with currency conversion for "All" view)
-  const fbaTransactionFeesTotal = Math.abs(fbaTransactionFeesData.reduce((sum, t) =>
-    sum + convertTransactionValue(t.total, t, marketplaceCode), 0));
-  const fbaCustomerReturnTotal = Math.abs(fbaCustomerReturnFees.reduce((sum, t) =>
-    sum + convertTransactionValue(t.total, t, marketplaceCode), 0));
-  const feeAdjustments = Math.abs(allDataForCosts
-    .filter(d => d.categoryType === 'Fee Adjustment')
-    .reduce((sum, t) => sum + convertTransactionValue(t.total, t, marketplaceCode), 0));
-  const safetReimbursements = Math.abs(allDataForCosts
-    .filter(d => d.categoryType === 'SAFE-T Reimbursement')
-    .reduce((sum, t) => sum + convertTransactionValue(t.total, t, marketplaceCode), 0));
+  // Note: fbaTransactionFeesTotal and fbaCustomerReturnTotal already calculated in main loop
+  // feeAdjustments and safetReimbursements need to be added to main loop if needed
+  // For now, calculate them here (minor perf impact)
+  let feeAdjustments = 0;
+  let safetReimbursements = 0;
+  for (const d of allDataForCosts) {
+    if (d.categoryType === 'Fee Adjustment') {
+      feeAdjustments += Math.abs(convertTransactionValue(d.total, d, marketplaceCode));
+    } else if (d.categoryType === 'SAFE-T Reimbursement') {
+      safetReimbursements += Math.abs(convertTransactionValue(d.total, d, marketplaceCode));
+    }
+  }
 
-  return {
+  const result: DetailedAnalytics = {
     // Core metrics
     totalOrders: orders.length,
     totalRefunds: refunds.length,
@@ -400,6 +530,7 @@ export const calculateAnalytics = (options: AnalyticsOptions): DetailedAnalytics
     fbaTransactionGroups,
     amazonFeesGroups,
     chargebackGroups,
+    shippingServicesGroups,
 
     // Totals
     adjustmentTotal,
@@ -407,6 +538,7 @@ export const calculateAnalytics = (options: AnalyticsOptions): DetailedAnalytics
     serviceTotal,
     chargebackTotal,
     liquidationsTotal,
+    shippingServicesTotal,
     totalSellingFees,
     totalFBACost,
     totalFBMCost,
@@ -451,6 +583,17 @@ export const calculateAnalytics = (options: AnalyticsOptions): DetailedAnalytics
     // Pie chart data
     pieChartData,
   };
+
+  // Cache result for future requests
+  analyticsCache.set(cacheKey, { result, timestamp: Date.now() });
+
+  // Limit cache size (keep max 20 entries)
+  if (analyticsCache.size > 20) {
+    const firstKey = analyticsCache.keys().next().value;
+    if (firstKey) analyticsCache.delete(firstKey);
+  }
+
+  return result;
 };
 
 /**

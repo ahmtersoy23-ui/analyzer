@@ -349,19 +349,19 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
         </h3>
 
         <div className="text-sm text-slate-600 mb-4">
-          <p className="mb-2">Farklı bir maliyet dosyası kullanmak isterseniz yükleyebilirsiniz.</p>
+          <p className="mb-2">You can upload a different cost file if needed.</p>
           <div className="bg-white rounded-lg p-3 border border-slate-200">
-            <div className="font-medium text-slate-700 mb-2">Desteklenen Kolonlar:</div>
+            <div className="font-medium text-slate-700 mb-2">Supported Columns:</div>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div><code className="bg-slate-100 px-1 rounded">sku</code> - SKU kodu (zorunlu)</div>
-              <div><code className="bg-slate-100 px-1 rounded">cost</code> - Birim maliyet</div>
-              <div><code className="bg-slate-100 px-1 rounded">size</code> / <code className="bg-slate-100 px-1 rounded">desi</code> - Desi değeri</div>
-              <div><code className="bg-slate-100 px-1 rounded">customShipping</code> - Özel kargo ücreti (opsiyonel)</div>
-              <div><code className="bg-slate-100 px-1 rounded">fbmSource</code> - FBM kaynağı: TR/US/BOTH (opsiyonel)</div>
+              <div><code className="bg-slate-100 px-1 rounded">sku</code> - SKU code (required)</div>
+              <div><code className="bg-slate-100 px-1 rounded">cost</code> - Unit cost</div>
+              <div><code className="bg-slate-100 px-1 rounded">size</code> / <code className="bg-slate-100 px-1 rounded">desi</code> - Desi value</div>
+              <div><code className="bg-slate-100 px-1 rounded">customShipping</code> - Custom shipping rate (optional)</div>
+              <div><code className="bg-slate-100 px-1 rounded">fbmSource</code> - FBM source: TR/US/BOTH (optional)</div>
             </div>
             <div className="mt-2 text-xs text-slate-500">
-              💡 <strong>customShipping:</strong> Desi cetvelini bypass eder, sabit kargo ücreti kullanılır<br/>
-              💡 <strong>fbmSource:</strong> SKU bazlı FBM gönderim kaynağı (US marketplace için)
+              💡 <strong>customShipping:</strong> Bypasses desi table, uses fixed shipping rate<br/>
+              💡 <strong>fbmSource:</strong> Per-SKU FBM shipping source (for US marketplace)
             </div>
           </div>
         </div>
@@ -378,7 +378,7 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
           onClick={() => fileInputRef.current?.click()}
           className="px-6 py-3 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors"
         >
-          Farklı Dosya Yükle
+          Upload Different File
         </button>
       </div>
 
@@ -670,27 +670,27 @@ const CostUploadTab: React.FC<CostUploadTabProps> = ({
       {costSummary && (
         <div className="bg-white border border-slate-200 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-slate-800 mb-4">
-            Eşleştirme Özeti
+            Matching Summary
           </h3>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <SummaryCard
-              label="Toplam Ürün"
+              label="Total Products"
               value={costSummary.totalProducts}
               color="blue"
             />
             <SummaryCard
-              label="Eşleşen"
+              label="Matched"
               value={costSummary.matchedProducts}
               color="green"
             />
             <SummaryCard
-              label="Eksik Maliyet"
+              label="Missing Cost"
               value={costSummary.missingCost.length}
               color={costSummary.missingCost.length > 0 ? 'yellow' : 'green'}
             />
             <SummaryCard
-              label="Eksik Desi"
+              label="Missing Size"
               value={costSummary.missingSize.length}
               color={costSummary.missingSize.length > 0 ? 'yellow' : 'green'}
             />

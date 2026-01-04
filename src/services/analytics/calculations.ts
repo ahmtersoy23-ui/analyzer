@@ -7,6 +7,40 @@ import type { MarketplaceCode } from '../../types/transaction';
 import { convertCurrency, getMarketplaceCurrency } from '../../utils/currencyExchange';
 
 /**
+ * Consolidate small groups (abs total < threshold) into "Miscellaneous"
+ * @param groups - Original grouped data
+ * @param threshold - Amount threshold (default $10)
+ * @returns Consolidated groups with small items merged
+ */
+export const consolidateSmallGroups = (
+  groups: Record<string, GroupData>,
+  threshold: number = 10
+): Record<string, GroupData> => {
+  const result: Record<string, GroupData> = {};
+  let miscCount = 0;
+  let miscTotal = 0;
+
+  // Sort entries by absolute total (descending) to get consistent ordering
+  const sortedEntries = Object.entries(groups).sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total));
+
+  sortedEntries.forEach(([key, data]) => {
+    if (Math.abs(data.total) < threshold) {
+      miscCount += data.count;
+      miscTotal += data.total;
+    } else {
+      result[key] = data;
+    }
+  });
+
+  // Add Miscellaneous at the end (will appear last due to iteration order)
+  if (miscCount > 0) {
+    result['Miscellaneous'] = { count: miscCount, total: miscTotal };
+  }
+
+  return result;
+};
+
+/**
  * Detect if a transaction is advertising-related (multi-language support)
  */
 export const isAdvertisingTransaction = (descriptionLower: string): boolean => {
@@ -18,11 +52,107 @@ export const isAdvertisingTransaction = (descriptionLower: string): boolean => {
 };
 
 /**
- * Normalize inventory fee descriptions across languages
+ * Normalize adjustment descriptions across languages
  */
-export const normalizeInventoryFeeDescription = (description: string): string => {
-  if (!description) return 'Other';
-  const lower = description.toLowerCase().trim();
+export const normalizeAdjustmentDescription = (description: string): string => {
+  // Ensure description is a string (might be number from Excel)
+  const descStr = description ? String(description) : '';
+  if (!descStr || descStr.trim() === '') return 'Other';
+  const lower = descStr.toLowerCase().trim();
+
+  // Failed disbursement
+  if (lower.includes('failed disbursement') ||
+      lower.includes('fehlgeschlagene auszahlung') ||   // DE
+      lower.includes('echec du versement') ||           // FR
+      lower.includes('esborso non riuscito') ||         // IT
+      lower.includes('desembolso fallido')) {           // ES
+    return 'Failed disbursement';
+  }
+
+  // Buyer Recharge
+  if (lower.includes('buyer recharge') ||
+      lower.includes('käufer wiedereinzug') ||          // DE
+      lower.includes('facturation du client') ||        // FR
+      lower.includes('riaddebito acquirente') ||        // IT
+      lower.includes('recargo al comprador')) {         // ES
+    return 'Buyer Recharge';
+  }
+
+  // A-to-z Guarantee Recovery
+  if (lower.includes('a-to-z guarantee recovery') ||
+      lower.includes('recouvrement de la garantie a-à-z') ||  // FR
+      lower.includes('rückforderung der a-bis-z') ||          // DE
+      lower.includes('recupero garanzia dalla a alla z') ||   // IT
+      lower.includes('recuperación de garantía de la a a la z')) { // ES
+    return 'A-to-z Guarantee Recovery';
+  }
+
+  // Other (multi-language)
+  if (lower === 'other' ||
+      lower === 'autre' ||                              // FR
+      lower === 'sonstiges' ||                          // DE
+      lower === 'altro' ||                              // IT
+      lower === 'otro') {                               // ES
+    return 'Other';
+  }
+
+  // FBA Inventory Reimbursement standardization
+  if (lower.includes('versand durch amazon erstattung') ||     // DE
+      lower.includes('remboursement stock expédié par amazon')) { // FR
+    // Extract the type and translate
+    if (lower.includes('verloren') || lower.includes('lost') || lower.includes('perdu')) {
+      if (lower.includes('auslieferung') || lower.includes('outbound')) {
+        return 'FBA Inventory Reimbursement - Lost:Outbound';
+      }
+      return 'FBA Inventory Reimbursement - Lost:Warehouse';
+    }
+    if (lower.includes('beschädigt') || lower.includes('damaged') || lower.includes('endommagé')) {
+      return 'FBA Inventory Reimbursement - Damaged:Warehouse';
+    }
+    if (lower.includes('allgemeine anpassung') || lower.includes('ajustement général') || lower.includes('general adjustment')) {
+      return 'FBA Inventory Reimbursement - General Adjustment';
+    }
+    if (lower.includes('customer return') || lower.includes('kundenrücksendung') || lower.includes('retour client')) {
+      return 'FBA Inventory Reimbursement - Customer Return';
+    }
+    return 'FBA Inventory Reimbursement - Other';
+  }
+
+  return descStr;  // Return the stringified description
+};
+
+/**
+ * Normalize inventory fee descriptions across languages
+ * @param description - The fee description text
+ * @param orderId - Optional order ID (may contain shipment ID for carrier fees)
+ */
+export const normalizeInventoryFeeDescription = (description: string, orderId?: string): string => {
+  // Ensure description is a string (might be number from Excel)
+  const descStr = description ? String(description) : '';
+
+  // Check for empty description with FBA shipment ID pattern (e.g., FBA194PTBZ6H)
+  // These are Amazon-Partnered Carrier fees for inbound shipments
+  if (!descStr || descStr.trim() === '') {
+    if (orderId && /^FBA[0-9A-Z]+$/i.test(String(orderId).trim())) {
+      return 'Partnered Carrier Fee';
+    }
+    return 'Other';
+  }
+  const lower = descStr.toLowerCase().trim();
+
+  // FBA Amazon-Partnered Carrier Shipment Fee (all languages)
+  if (lower.includes('partnered carrier') ||
+      lower.includes('amazon-partnered carrier') ||
+      lower.includes('carrier shipment fee') ||
+      lower.includes('corriere convenzionato') ||           // IT: Corriere convenzionato Amazon
+      lower.includes('transporteur partenaire') ||          // FR: Transporteur partenaire Amazon
+      lower.includes('amazon-partnerversand') ||            // DE: Amazon-Partnerversand
+      lower.includes('transportista asociado') ||           // ES: Transportista asociado de Amazon
+      lower.includes('partnertransporteur') ||              // NL/BE
+      lower.includes('frachtkosten für den transport') ||   // DE: Frachtkosten für den Transport zum Amazon-Versandzentrum
+      lower.includes('transportpartner-programm')) {        // DE: Gebühr für die Teilnahme am Amazon Transportpartner-Programm
+    return 'Partnered Carrier Fee';
+  }
 
   // Long-Term Storage Fee (check first, before general storage)
   if (lower.includes('long-term storage') ||
@@ -32,6 +162,7 @@ export const normalizeInventoryFeeDescription = (description: string): string =>
       lower.includes('langzeitlagergebühr') ||         // DE
       lower.includes('stockage à long terme') ||       // FR
       lower.includes('almacenamiento a largo plazo') || // ES
+      lower.includes('almacenamiento prolongado') ||   // ES: Tarifa por almacenamiento prolongado
       lower === 'long-term storage fee') {
     return 'Long-Term Storage Fee';
   }
@@ -42,14 +173,17 @@ export const normalizeInventoryFeeDescription = (description: string): string =>
       lower.includes('tariffa di stoccaggio') ||       // IT
       lower.includes('lagergebühr') ||                 // DE
       lower.includes('frais de stockage') ||           // FR
-      lower.includes('tarifa de almacenamiento')) {    // ES
+      lower.includes('tarifa de almacenamiento') ||    // ES
+      lower.includes('tarifa por almacenamiento de logística')) {  // ES: Tarifa por almacenamiento de Logística de Amazon
     return 'Storage Fee';
   }
 
   // Disposal Fee
   if (lower.includes('disposal') ||
+      lower.includes('removal order: disposal') ||     // FBA Removal Order: Disposal Fee / Fulfilment by Amazon removal order: disposal fee
       lower.includes('entsorgung') ||                  // DE
       lower.includes('élimination') ||                 // FR
+      lower.includes('disposition expédié par amazon') ||  // FR: Frais de disposition Expédié par Amazon
       lower.includes('smaltimento') ||                 // IT
       lower.includes('eliminación')) {                 // ES
     return 'Disposal Fee';
@@ -65,9 +199,11 @@ export const normalizeInventoryFeeDescription = (description: string): string =>
 
   // Return Fee
   if (lower.includes('return fee') ||
+      lower.includes('removal order: return') ||       // FBA Removal Order: Return Fee
       lower.includes('restituzione') ||                // IT
       lower.includes('retour') ||                      // FR
       lower.includes('rückgabe') ||                    // DE
+      lower.includes('rücksendung') ||                 // DE: Versand durch Amazon Gebühr für Rücksendung
       lower.includes('devolución')) {                  // ES
     return 'Return Fee';
   }
@@ -86,7 +222,7 @@ export const normalizeInventoryFeeDescription = (description: string): string =>
     return 'FBA Inventory Fee (Other)';
   }
 
-  return description;
+  return descStr;  // Return the stringified description
 };
 
 /**

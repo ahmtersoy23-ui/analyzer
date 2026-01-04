@@ -385,7 +385,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
                     />
                     <span className="text-sm text-slate-600">
-                      {comparisonMode === 'previous-period' ? 'Önceki Dönem' : 'Önceki Yıl'}
+                      {comparisonMode === 'previous-period' ? 'Previous Period' : 'Previous Year'}
                     </span>
                   </label>
                 )}
@@ -401,7 +401,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       if (groupByMonth) {
                         // Format as "Oca 2024" for monthly data (YYYY-MM format)
                         const [year, month] = date.split('-');
-                        const monthNames = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                         return `${monthNames[parseInt(month) - 1]} ${year}`;
                       } else {
                         // Format as "15/1" for daily data (YYYY-MM-DD format)
@@ -423,11 +423,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       const formattedDate = groupByMonth
                         ? (() => {
                             const [year, month] = labelStr.split('-');
-                            const monthNames = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
-                                              'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+                            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                                              'July', 'August', 'September', 'October', 'November', 'December'];
                             return `${monthNames[parseInt(month) - 1]} ${year}`;
                           })()
-                        : new Date(labelStr).toLocaleDateString('tr-TR');
+                        : new Date(labelStr).toLocaleDateString('en-US');
 
                       return (
                         <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-lg">
@@ -436,13 +436,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                             {data.sales !== undefined && (
                               <p className="text-sm">
                                 <span className="inline-block w-3 h-3 rounded-full bg-blue-500 mr-2"></span>
-                                <span className="text-slate-600">Satış:</span>{' '}
+                                <span className="text-slate-600">Sales:</span>{' '}
                                 <span className="font-semibold text-slate-800">{formatMoney(data.sales, marketplace)}</span>
                               </p>
                             )}
                             {data.quantity !== undefined && (
                               <p className="text-sm text-slate-600">
-                                <span className="ml-5">Adet: {data.quantity}</span>
+                                <span className="ml-5">Qty: {data.quantity}</span>
                               </p>
                             )}
                             {data.prevSales !== undefined && (
@@ -450,12 +450,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                                 <div className="border-t border-slate-200 my-2"></div>
                                 <p className="text-sm">
                                   <span className="inline-block w-3 h-3 rounded-full bg-orange-500 mr-2"></span>
-                                  <span className="text-slate-600">Satış (Önceki):</span>{' '}
+                                  <span className="text-slate-600">Sales (Previous):</span>{' '}
                                   <span className="font-semibold text-slate-800">{formatMoney(data.prevSales, marketplace)}</span>
                                 </p>
                                 {data.prevQuantity !== undefined && (
                                   <p className="text-sm text-slate-600">
-                                    <span className="ml-5">Adet: {data.prevQuantity}</span>
+                                    <span className="ml-5">Qty: {data.prevQuantity}</span>
                                   </p>
                                 )}
                               </>

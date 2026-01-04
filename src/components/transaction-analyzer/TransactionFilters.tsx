@@ -4,9 +4,14 @@
  */
 
 import React from 'react';
-import { Filter } from 'lucide-react';
+import { Filter, GitCompare } from 'lucide-react';
 import type { MarketplaceCode } from '../../types/transaction';
-import { MARKETPLACE_CONFIGS } from '../../constants/marketplaces';
+
+// Marketplace flags for consistent display
+const MARKETPLACE_FLAGS: Record<string, string> = {
+  US: '🇺🇸', UK: '🇬🇧', DE: '🇩🇪', FR: '🇫🇷', IT: '🇮🇹', ES: '🇪🇸',
+  CA: '🇨🇦', AU: '🇦🇺', AE: '🇦🇪', SA: '🇸🇦', SG: '🇸🇬', TR: '🇹🇷',
+};
 
 interface TransactionFiltersProps {
   marketplaceCode: MarketplaceCode | null;
@@ -81,7 +86,7 @@ export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
             <option value="all">All Marketplaces</option>
             {marketplaceCodes.map(code => (
               <option key={code} value={code}>
-                {MARKETPLACE_CONFIGS[code].currencySymbol} {MARKETPLACE_CONFIGS[code].name}
+                {MARKETPLACE_FLAGS[code] || '🌍'} {code}
               </option>
             ))}
           </select>
@@ -106,12 +111,19 @@ export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
         {/* Comparison Mode */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
+            <GitCompare className="w-3.5 h-3.5 inline mr-1" />
             Comparison
           </label>
           <select
             value={comparisonMode}
             onChange={(e) => onComparisonModeChange(e.target.value as 'none' | 'previous-period' | 'previous-year')}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            className={`w-full px-3 py-2 border rounded-lg text-sm ${
+              !dateRange.start || !dateRange.end
+                ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
+                : comparisonMode !== 'none'
+                ? 'border-purple-300 bg-purple-50 text-purple-700'
+                : 'border-slate-300'
+            }`}
             disabled={!dateRange.start || !dateRange.end}
           >
             <option value="none">None</option>

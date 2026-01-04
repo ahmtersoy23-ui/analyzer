@@ -5,7 +5,6 @@ import type { TransactionData, MarketplaceCode } from './types/transaction';
 import { fetchLiveRates } from './utils/currencyExchange';
 
 // Lazy load heavy components - only loaded when user navigates to them
-const ProductAnalyzer = lazy(() => import('./components/ProductAnalyzer'));
 const ProfitabilityAnalyzer = lazy(() => import('./components/ProfitabilityAnalyzer'));
 const TrendsAnalyzer = lazy(() => import('./components/TrendsAnalyzer'));
 const TestPanel = lazy(() => import('./shared/testing/TestPanel'));
@@ -20,7 +19,7 @@ const LoadingFallback = () => (
   </div>
 );
 
-type Phase = 'transaction' | 'product' | 'profitability' | 'trends';
+type Phase = 'transaction' | 'profitability' | 'trends';
 
 function App() {
   const [activePhase, setActivePhase] = useState<Phase>('transaction');
@@ -28,13 +27,10 @@ function App() {
   const [selectedMarketplace] = useState<MarketplaceCode>('US');
 
   // TransactionAnalyzer'dan data geldiğinde
-  // IMPORTANT: Only set data on initial load, not on filter changes
+  // TransactionAnalyzer sadece ALL data yüklendiğinde bunu çağırıyor (filtre değişikliklerinde değil)
   const handleDataLoaded = (data: TransactionData[]) => {
-    // Only update if we don't have data yet (initial load)
-    // This ensures ProductAnalyzer always has ALL data, not filtered data
-    if (transactionData.length === 0 || data.length > transactionData.length) {
-      setTransactionData(data);
-    }
+    // Always update - TransactionAnalyzer only calls this for full dataset loads
+    setTransactionData(data);
   };
 
   // Fetch exchange rates on app load (for all phases)
@@ -80,20 +76,6 @@ function App() {
                 }`}
               >
                 Transaction Analyzer
-              </button>
-
-              <button
-                onClick={() => setActivePhase('product')}
-                disabled={transactionData.length === 0}
-                className={`px-6 py-3 rounded-lg font-semibold transition-all ${
-                  activePhase === 'product'
-                    ? 'bg-green-600 text-white shadow-lg shadow-green-200'
-                    : transactionData.length === 0
-                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                Product Analyzer
               </button>
 
               <button
@@ -143,34 +125,6 @@ function App() {
           <TransactionAnalyzer
             onDataLoaded={handleDataLoaded}
           />
-        </div>
-
-        <div style={{ display: activePhase === 'product' ? 'block' : 'none' }}>
-          {transactionData.length > 0 ? (
-            <Suspense fallback={<LoadingFallback />}>
-              <ProductAnalyzer
-                transactionData={transactionData}
-              />
-            </Suspense>
-          ) : (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-              <div className="bg-white rounded-2xl shadow-xl p-12 max-w-md text-center">
-                <div className="text-6xl mb-6">📦</div>
-                <h2 className="text-2xl font-bold text-slate-800 mb-3">
-                  Transaction Data Gerekli
-                </h2>
-                <p className="text-slate-600 mb-6">
-                  Product Analyzer'ı kullanmak için önce Transaction Analyzer'dan Excel dosyalarınızı yükleyin.
-                </p>
-                <button
-                  onClick={() => setActivePhase('transaction')}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold"
-                >
-                  Transaction Analyzer'a Git
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         <div style={{ display: activePhase === 'profitability' ? 'block' : 'none' }}>

@@ -619,6 +619,7 @@ export const calculateSKUProfitability = (
     let customsDuty = 0;
     let ddpFee = 0;
     let shippingRateFound = true; // Track if shipping rate was found
+    let shippingPartial = false; // Track if shipping calculation is incomplete (e.g., US-US rate missing)
 
     // Helper: Calculate FBM shipping for a given mode
     // Note: 'US' from fbmSource maps to 'LOCAL' in FBMShippingMode
@@ -627,7 +628,7 @@ export const calculateSKUProfitability = (
       qty: number,
       mode: 'TR' | 'US' | 'LOCAL' | 'BOTH',
       config: any
-    ): { shipping: number; customs: number; ddp: number; found: boolean } => {
+    ): { shipping: number; customs: number; ddp: number; found: boolean; partial: boolean } => {
       // Normalize 'US' to 'LOCAL' for consistency with FBMShippingMode type
       const normalizedMode = mode === 'US' ? 'LOCAL' : mode;
 
@@ -650,6 +651,7 @@ export const calculateSKUProfitability = (
             customs: 0,
             ddp: 0,
             found: true,
+            partial: false, // customShipping var, tam hesaplama
           };
         } else if (normalizedMode === 'BOTH') {
           // BOTH = (LOCAL + TR kargo) / 2
@@ -665,12 +667,13 @@ export const calculateSKUProfitability = (
             customs: avgPrice * (dutyPercent / 100) * qty * 0.5, // Yarısı TR
             ddp: ddpFeeConverted * qty * 0.5,
             found: true,
+            partial: !trResult.found, // TR rate yoksa partial
           };
         } else {
           // TR modu - customShipping kullanılmaz, TR kargo tablosundan
           const trResult = shippingRates ? getShippingRate(shippingRates, 'US-TR', desi || 1) : { rate: 0, found: false, currency: 'USD' as ShippingCurrency };
           if (!trResult.found) {
-            return { shipping: 0, customs: 0, ddp: 0, found: false };
+            return { shipping: 0, customs: 0, ddp: 0, found: false, partial: false };
           }
           const trRateConverted = convertCurrency(trResult.rate, shippingCurrencyToCurrencyCode(trResult.currency), targetCurrency);
           const dutyPercent = getCustomsDutyPercent(countryConfigs!, effectiveMarketplace!, data.category);
@@ -680,6 +683,7 @@ export const calculateSKUProfitability = (
             customs: avgPrice * (dutyPercent / 100) * qty,
             ddp: ddpFeeConverted * qty,
             found: true,
+            partial: false,
           };
         }
       }
@@ -694,18 +698,19 @@ export const calculateSKUProfitability = (
           customs: avgPrice * (dutyPercent / 100) * qty,
           ddp: ddpFeeConverted * qty,
           found: true,
+          partial: false,
         };
       }
 
       // Normal desi bazlı hesaplama
-      if (!desi) return { shipping: 0, customs: 0, ddp: 0, found: false };
+      if (!desi) return { shipping: 0, customs: 0, ddp: 0, found: false, partial: false };
 
       if (effectiveMarketplace === 'US') {
         // FBM-US (LOCAL) için depoya gönderim bedeli FBA ile aynı
         const fbaShippingPerDesi = config?.fba.shippingPerDesi ?? 0;
         const shippingResult = getUSFBMShippingRate(shippingRates!, desi, normalizedMode, fbaShippingPerDesi);
         if (!shippingResult.found) {
-          return { shipping: 0, customs: 0, ddp: 0, found: false };
+          return { shipping: 0, customs: 0, ddp: 0, found: false, partial: false };
         }
         // Shipping rate'i dönüştür
         const shippingRateConverted = convertCurrency(shippingResult.rate, shippingCurrencyToCurrencyCode(shippingResult.currency), targetCurrency);
@@ -719,14 +724,15 @@ export const calculateSKUProfitability = (
             customs: avgPrice * (dutyPercent / 100) * qty * multiplier,
             ddp: ddpFeeConverted * qty * multiplier,
             found: true,
+            partial: shippingResult.partial, // US-US rate eksik olabilir
           };
         }
-        return { shipping, customs: 0, ddp: 0, found: true };
+        return { shipping, customs: 0, ddp: 0, found: true, partial: shippingResult.partial };
       } else {
         const route = getShippingRouteForMarketplace(effectiveMarketplace!);
         const shippingResult = getShippingRate(shippingRates!, route, desi);
         if (!shippingResult.found) {
-          return { shipping: 0, customs: 0, ddp: 0, found: false };
+          return { shipping: 0, customs: 0, ddp: 0, found: false, partial: false };
         }
         // Shipping rate'i dönüştür
         const shippingRateConverted = convertCurrency(shippingResult.rate, shippingCurrencyToCurrencyCode(shippingResult.currency), targetCurrency);
@@ -737,6 +743,7 @@ export const calculateSKUProfitability = (
           customs: avgPrice * (dutyPercent / 100) * qty,
           ddp: ddpFeeConverted * qty,
           found: true,
+          partial: false,
         };
       }
     };
@@ -765,6 +772,7 @@ export const calculateSKUProfitability = (
           customsDuty = result.customs;
           ddpFee = result.ddp;
           shippingRateFound = result.found;
+          shippingPartial = result.partial;
         }
       } else {
         // Mixed - estimate 50/50 FBA/FBM
@@ -786,6 +794,7 @@ export const calculateSKUProfitability = (
           customsDuty = result.customs;
           ddpFee = result.ddp;
           shippingRateFound = result.found;
+          shippingPartial = result.partial;
         }
       }
     }
@@ -796,6 +805,13 @@ export const calculateSKUProfitability = (
     if ((fulfillment === 'FBM' || fulfillment === 'Mixed') && !shippingRateFound && !desi && !customShipping) {
       hasSizeData = false;
     }
+
+    // Check for shipping cost issue: FBM/Mixed with zero shipping cost OR partial calculation is problematic
+    // Zero shipping inflates profit incorrectly
+    // Partial means some rates are missing (e.g., gemi bedeli var ama US-US rate yok)
+    const hasShippingIssue = (fulfillment === 'FBM' || fulfillment === 'Mixed') &&
+      data.quantity > 0 &&
+      (shippingCost === 0 || shippingPartial);
 
     // Calculate costs
     const totalProductCost = unitCost !== null ? unitCost * data.quantity : 0;
@@ -1001,6 +1017,7 @@ export const calculateSKUProfitability = (
       hasCostData,
       hasSizeData,
       desi,
+      hasShippingIssue,
     });
   });
 
@@ -1013,12 +1030,17 @@ export const calculateSKUProfitability = (
   const resultCostButNoSize = results.filter(r => r.hasCostData && !r.hasSizeData).length;
   const resultSizeButNoCost = results.filter(r => !r.hasCostData && r.hasSizeData).length;
 
+  const resultWithShippingIssue = results.filter(r => r.hasShippingIssue).length;
+
   logger.log(`[calculateSKUProfitability] Results: ${results.length} SKUs total`);
   logger.log(`  - With cost: ${resultWithCost}, With size: ${resultWithSize}`);
   logger.log(`  - With BOTH (coverage): ${resultWithBoth}`);
   logger.log(`  - Missing cost: ${resultNoCost}, Missing size: ${resultNoSize}`);
   logger.log(`  - Has cost but NO size: ${resultCostButNoSize}`);
   logger.log(`  - Has size but NO cost: ${resultSizeButNoCost}`);
+  if (resultWithShippingIssue > 0) {
+    logger.log(`  - ⚠️ FBM/Mixed with $0 shipping: ${resultWithShippingIssue}`);
+  }
 
   return results.sort((a, b) => b.totalRevenue - a.totalRevenue);
 };
