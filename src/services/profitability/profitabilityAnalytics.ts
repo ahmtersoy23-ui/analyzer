@@ -161,18 +161,23 @@ export const calculateProductProfitability = (
     const grossProfit = skus.reduce((sum, s) => sum + s.grossProfit, 0);
     const netProfit = skus.reduce((sum, s) => sum + s.netProfit, 0);
 
-    // Flags - true only if ALL SKUs have data
-    const hasCostData = skus.every(s => s.hasCostData);
-    const hasSizeData = skus.every(s => s.hasSizeData);
+    // Flags - true if ANY SKU has data (allows partial cost coverage)
+    const hasCostData = skus.some(s => s.hasCostData);
+    const hasSizeData = skus.some(s => s.hasSizeData);
 
     // Use first SKU's desi (they should be the same for same product)
     const desi = skus[0]?.desi ?? null;
-    const productCost = skus[0]?.productCost ?? 0;
+    // Calculate weighted average productCost based on quantity sold
+    const productCost = totalQuantity > 0
+      ? skus.reduce((sum, s) => sum + (s.productCost * s.totalQuantity), 0) / totalQuantity
+      : 0;
 
     // Calculate percentages from aggregated values
     const profitMargin = totalRevenue > 0 && hasCostData ? (netProfit / totalRevenue) * 100 : 0;
     const totalCosts = totalProductCost + shippingCost + customsDuty + ddpFee + advertisingCost + fbaCost + fbmCost + warehouseCost + gstCost;
-    const roi = totalCosts > 0 && hasCostData ? (netProfit / totalCosts) * 100 : 0;
+    // ROI calculation with proper handling of zero/negative costs
+    // Use Math.abs to handle refund scenarios where costs might appear negative
+    const roi = Math.abs(totalCosts) > 0 && hasCostData ? (netProfit / Math.abs(totalCosts)) * 100 : 0;
 
     const sellingFeePercent = totalRevenue > 0 ? (sellingFees / totalRevenue) * 100 : 0;
     const fbaFeePercent = totalRevenue > 0 ? (fbaFees / totalRevenue) * 100 : 0;
@@ -337,7 +342,9 @@ export const calculateCategoryProfitability = (
     // Calculate percentages from aggregated values
     const profitMargin = totalRevenue > 0 && hasCostData ? (netProfit / totalRevenue) * 100 : 0;
     const totalCosts = totalProductCost + shippingCost + customsDuty + ddpFee + advertisingCost + fbaCost + fbmCost + warehouseCost + gstCost;
-    const roi = totalCosts > 0 && hasCostData ? (netProfit / totalCosts) * 100 : 0;
+    // ROI calculation with proper handling of zero/negative costs
+    // Use Math.abs to handle refund scenarios where costs might appear negative
+    const roi = Math.abs(totalCosts) > 0 && hasCostData ? (netProfit / Math.abs(totalCosts)) * 100 : 0;
 
     const sellingFeePercent = totalRevenue > 0 ? (sellingFees / totalRevenue) * 100 : 0;
     const fbaFeePercent = totalRevenue > 0 ? (fbaFees / totalRevenue) * 100 : 0;
@@ -957,7 +964,9 @@ export const calculateSKUProfitability = (
     const totalCosts = totalProductCost + shippingCost + customsDuty + ddpFee + advertisingCost + fbaCost + fbmCost + warehouseCost + gstCost;
     const netProfit = hasCostData ? grossProfit - totalCosts : 0;
     const profitMargin = data.revenue > 0 && hasCostData ? (netProfit / data.revenue) * 100 : 0;
-    const roi = totalCosts > 0 && hasCostData ? (netProfit / totalCosts) * 100 : 0;
+    // ROI calculation with proper handling of zero/negative costs
+    // Use Math.abs to handle refund scenarios where costs might appear negative
+    const roi = Math.abs(totalCosts) > 0 && hasCostData ? (netProfit / Math.abs(totalCosts)) * 100 : 0;
 
     // Percentages
     const sellingFeePercent = data.revenue > 0 ? (data.sellingFees / data.revenue) * 100 : 0;
@@ -1130,7 +1139,9 @@ export const calculateParentProfitability = (
     // Calculate percentages from aggregated values
     const profitMargin = totalRevenue > 0 && hasCostData ? (netProfit / totalRevenue) * 100 : 0;
     const totalCosts = totalProductCost + shippingCost + customsDuty + ddpFee + advertisingCost + fbaCost + fbmCost + warehouseCost + gstCost;
-    const roi = totalCosts > 0 && hasCostData ? (netProfit / totalCosts) * 100 : 0;
+    // ROI calculation with proper handling of zero/negative costs
+    // Use Math.abs to handle refund scenarios where costs might appear negative
+    const roi = Math.abs(totalCosts) > 0 && hasCostData ? (netProfit / Math.abs(totalCosts)) * 100 : 0;
 
     const sellingFeePercent = totalRevenue > 0 ? (sellingFees / totalRevenue) * 100 : 0;
     const fbaFeePercent = totalRevenue > 0 ? (fbaFees / totalRevenue) * 100 : 0;

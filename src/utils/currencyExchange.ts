@@ -319,8 +319,12 @@ export const convertCurrency = (
   const rate = rates[from]?.[to];
 
   if (!rate) {
-    console.warn(`Exchange rate not found for ${from} to ${to}, returning original amount`);
-    return amount;
+    // CRITICAL: Missing exchange rate - this would cause severe calculation errors
+    // Log error and return 0 to make the issue visible (not silently wrong data)
+    console.error(`CRITICAL: Exchange rate not found for ${from} to ${to}. Amount: ${amount}`);
+    // Return 0 instead of unconverted amount to prevent 30-40x inflation errors
+    // This makes missing rates visible in reports rather than silently wrong
+    return 0;
   }
 
   return amount * rate;

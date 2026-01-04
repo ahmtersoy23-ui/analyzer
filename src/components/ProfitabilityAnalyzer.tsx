@@ -264,6 +264,12 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     loadFbmOverrides();
   }, []);
 
+  // Ref to access costData without causing effect re-runs
+  const costDataRef = React.useRef(costData);
+  React.useEffect(() => {
+    costDataRef.current = costData;
+  }, [costData]);
+
   // Save NAME overrides to both localStorage and API
   useEffect(() => {
     // Skip initial load
@@ -281,12 +287,15 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     const saveToApi = async () => {
       if (nameOverrides.length === 0) return;
 
+      // Use ref to get current costData without dependency
+      const currentCostData = costDataRef.current;
+
       // Build SKU-level overrides from nameOverrides
       const skuOverrides: FbmOverride[] = [];
 
       nameOverrides.forEach(override => {
         // Find all SKUs for this NAME from costData
-        const skusForName = costData.filter(c => c.name === override.name).map(c => c.sku);
+        const skusForName = currentCostData.filter(c => c.name === override.name).map(c => c.sku);
 
         if (skusForName.length > 0) {
           skusForName.forEach(sku => {
@@ -321,7 +330,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     // Debounce API save to avoid too many requests
     const timeoutId = setTimeout(saveToApi, 1000);
     return () => clearTimeout(timeoutId);
-  }, [nameOverrides, fbmOverridesLoaded, costData]);
+  }, [nameOverrides, fbmOverridesLoaded]);
 
   // Save cost data to localStorage (only when it has actual uploaded data, not extracted data)
   useEffect(() => {
