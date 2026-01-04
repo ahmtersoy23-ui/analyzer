@@ -97,19 +97,22 @@ function AppContent() {
                 Profitability Analyzer
               </button>
 
-              <button
-                onClick={() => setActivePhase('trends')}
-                disabled={transactionData.length === 0}
-                className={`px-6 py-3 rounded-lg font-semibold transition-all ${
-                  activePhase === 'trends'
-                    ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-200'
-                    : transactionData.length === 0
-                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                Trends
-              </button>
+              {/* Trends - Admin Only (Beta) */}
+              {isAdmin && (
+                <button
+                  onClick={() => setActivePhase('trends')}
+                  disabled={transactionData.length === 0}
+                  className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+                    activePhase === 'trends'
+                      ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-200'
+                      : transactionData.length === 0
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Trends
+                </button>
+              )}
             </div>
 
             {/* Data Info & Actions */}
@@ -192,33 +195,36 @@ function AppContent() {
           )}
         </div>
 
-        <div style={{ display: activePhase === 'trends' ? 'block' : 'none' }}>
-          {transactionData.length > 0 ? (
-            <Suspense fallback={<LoadingFallback />}>
-              <TrendsAnalyzer
-                transactionData={transactionData}
-              />
-            </Suspense>
-          ) : (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-              <div className="bg-white rounded-2xl shadow-xl p-12 max-w-md text-center">
-                <div className="text-6xl mb-6">📈</div>
-                <h2 className="text-2xl font-bold text-slate-800 mb-3">
-                  Transaction Data Required
-                </h2>
-                <p className="text-slate-600 mb-6">
-                  Please upload your Excel files from Transaction Analyzer for Trend Analysis.
-                </p>
-                <button
-                  onClick={() => setActivePhase('transaction')}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold"
-                >
-                  Go to Transaction Analyzer
-                </button>
+        {/* Trends Analyzer - Admin Only (Beta) */}
+        {isAdmin && (
+          <div style={{ display: activePhase === 'trends' ? 'block' : 'none' }}>
+            {transactionData.length > 0 ? (
+              <Suspense fallback={<LoadingFallback />}>
+                <TrendsAnalyzer
+                  transactionData={transactionData}
+                />
+              </Suspense>
+            ) : (
+              <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+                <div className="bg-white rounded-2xl shadow-xl p-12 max-w-md text-center">
+                  <div className="text-6xl mb-6">📈</div>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-3">
+                    Transaction Data Required
+                  </h2>
+                  <p className="text-slate-600 mb-6">
+                    Please upload your Excel files from Transaction Analyzer for Trend Analysis.
+                  </p>
+                  <button
+                    onClick={() => setActivePhase('transaction')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold"
+                  >
+                    Go to Transaction Analyzer
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* User Management - Admin Only */}
         {isAdmin && (

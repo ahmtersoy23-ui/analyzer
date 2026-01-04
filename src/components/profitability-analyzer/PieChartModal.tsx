@@ -33,6 +33,7 @@ interface PieChartModalProps {
   formatMoney: (value: number) => string;
   transactionData?: TransactionData[];
   marketplace?: string;
+  selectedMarketplaces?: Set<string>;
 }
 
 type TabType = 'breakdown' | 'trend';
@@ -43,6 +44,7 @@ const PieChartModal: React.FC<PieChartModalProps> = ({
   formatMoney,
   transactionData = [],
   marketplace = 'all',
+  selectedMarketplaces = new Set(),
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('breakdown');
 
@@ -58,13 +60,17 @@ const PieChartModal: React.FC<PieChartModalProps> = ({
   const matchesItem = (t: TransactionData) => {
     if (!selectedItem) return false;
     if (selectedItem.type === 'sku') {
-      return t.sku === selectedItem.data.sku;
+      // SKU must exist and match
+      return t.sku && selectedItem.data.sku && t.sku === selectedItem.data.sku;
     } else if (selectedItem.type === 'product') {
-      return t.name === selectedItem.data.name;
+      // Product name must exist and match (prevent undefined === undefined)
+      return t.name && selectedItem.data.name && t.name === selectedItem.data.name;
     } else if (selectedItem.type === 'parent') {
-      return t.parent === selectedItem.data.parent;
+      // Parent must exist and match
+      return t.parent && selectedItem.data.parent && t.parent === selectedItem.data.parent;
     } else if (selectedItem.type === 'category') {
-      return t.productCategory === selectedItem.data.category;
+      // Category must exist and match
+      return t.productCategory && selectedItem.data.category && t.productCategory === selectedItem.data.category;
     }
     return false;
   };
@@ -82,8 +88,14 @@ const PieChartModal: React.FC<PieChartModalProps> = ({
       if (startDate && t.dateOnly && t.dateOnly < startDate) return false;
       if (endDate && t.dateOnly && t.dateOnly > endDate) return false;
 
-      // Apply marketplace filter
-      if (marketplace !== 'all' && t.marketplaceCode !== marketplace) return false;
+      // Apply marketplace filter (support both single and multi-select)
+      if (selectedMarketplaces.size > 0) {
+        // Multi-select mode: filter by selected marketplaces
+        if (!t.marketplaceCode || !selectedMarketplaces.has(t.marketplaceCode)) return false;
+      } else if (marketplace !== 'all' && t.marketplaceCode !== marketplace) {
+        // Single select mode
+        return false;
+      }
 
       return true;
     });

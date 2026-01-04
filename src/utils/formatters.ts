@@ -81,3 +81,18 @@ export const calculateChange = (current: number, previous: number): { value: num
   const percentage = previous !== 0 ? (value / previous) * 100 : 0;
   return { value, percentage };
 };
+
+/**
+ * Get dateOnly string from transaction, with fallback to Date object
+ * Ensures date filtering works even for older data without dateOnly field
+ * @param t - Transaction with optional date and dateOnly fields
+ */
+export const getDateOnly = (t: { date?: Date; dateOnly?: string }): string => {
+  if (t.dateOnly) return t.dateOnly;
+  if (t.date) {
+    // Derive YYYY-MM-DD from Date object (local timezone)
+    const d = t.date;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  return '';
+};

@@ -7,6 +7,7 @@ import { TransactionData, MarketplaceCode } from '../../types/transaction';
 import { isDateInRange } from './calculations';
 import { isAdvertisingTransaction } from './calculations';
 import { convertCurrency, getMarketplaceCurrency } from '../../utils/currencyExchange';
+import { getDateOnly } from '../../utils/formatters';
 
 // Threshold for acceptable difference (percentage)
 const REVENUE_TOLERANCE_PERCENT = 1; // 1% difference is acceptable
@@ -35,18 +36,6 @@ export interface AnalyzerMetrics {
   marketplace: MarketplaceCode | 'all';
   dateRange: { start: string | null; end: string | null };
 }
-
-/**
- * Get dateOnly string from transaction with fallback
- */
-const getDateOnly = (t: TransactionData): string => {
-  if (t.dateOnly) return t.dateOnly;
-  if (t.date) {
-    const d = t.date;
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  return '';
-};
 
 /**
  * Calculate base metrics from raw transactions

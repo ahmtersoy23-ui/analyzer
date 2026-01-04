@@ -32,14 +32,14 @@ import {
   calculateParentProfitability,
   calculateSKUProfitability,
 } from '../services/profitability/profitabilityAnalytics';
-import { exportForPricingCalculator, exportAmazonExpensesForPriceLab, exportAmazonExpensesV2ForPriceLab } from '../services/profitability/pricingExport';
+import { exportForPricingCalculator, exportAmazonExpensesV2ForPriceLab } from '../services/profitability/pricingExport';
 import {
   calculateAdvertisingCost,
   calculateFBACosts,
   calculateFBMCosts,
   calculateProductAnalytics,
 } from '../services/analytics/productAnalytics';
-import { createMoneyFormatter, formatPercent } from '../utils/formatters';
+import { createMoneyFormatter, formatPercent, getDateOnly } from '../utils/formatters';
 import { isDateInRange } from '../services/analytics/calculations';
 import { MARKETPLACE_CONFIGS } from '../constants/marketplaces';
 import { convertCurrency, getMarketplaceCurrency, fetchLiveRates, type ExchangeRateStatus } from '../utils/currencyExchange';
@@ -85,20 +85,6 @@ const EMPTY_SKU_RESULT: { skuProfitability: any[]; excludedSkus: any[]; gradeRes
 };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const EMPTY_ARRAY: any[] = [];
-
-/**
- * Get dateOnly string from transaction, with fallback to Date object
- * Ensures date filtering works even for older data without dateOnly field
- */
-const getDateOnly = (t: TransactionData): string => {
-  if (t.dateOnly) return t.dateOnly;
-  if (t.date) {
-    // Derive YYYY-MM-DD from Date object (local timezone)
-    const d = t.date;
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  return '';
-};
 
 interface ProfitabilityAnalyzerProps {
   transactionData: TransactionData[];
@@ -1464,9 +1450,10 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
               </p>
             </div>
 
-            {/* Config Buttons - Admin Only */}
-            {isAdmin && (
-              <div className="flex items-center gap-2">
+            {/* Config Buttons - Data only for Admin, Shipping/Settings for all */}
+            <div className="flex items-center gap-2">
+              {/* Data Button - Admin Only */}
+              {isAdmin && (
                 <button
                   onClick={() => {
                     setShowCostData(!showCostData);
@@ -1485,46 +1472,48 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
                   <span className="text-sm font-medium">Data</span>
                   {showCostData ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </button>
+              )}
 
-                <button
-                  onClick={() => {
-                    setShowShippingRates(!showShippingRates);
-                    setShowCostData(false);
-                    setShowCountrySettings(false);
-                  }}
-                  className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
-                    showShippingRates
-                      ? 'bg-blue-600 text-white'
-                      : shippingRates && shippingRates.routes['US-TR'].rates.length > 0
-                      ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <Truck className="w-4 h-4" />
-                  <span className="text-sm font-medium">Shipping</span>
-                  {showShippingRates ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
+              {/* Shipping Button - All Users (read-only for viewers) */}
+              <button
+                onClick={() => {
+                  setShowShippingRates(!showShippingRates);
+                  setShowCostData(false);
+                  setShowCountrySettings(false);
+                }}
+                className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
+                  showShippingRates
+                    ? 'bg-blue-600 text-white'
+                    : shippingRates && shippingRates.routes['US-TR'].rates.length > 0
+                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Truck className="w-4 h-4" />
+                <span className="text-sm font-medium">Shipping</span>
+                {showShippingRates ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
 
-                <button
-                  onClick={() => {
-                    setShowCountrySettings(!showCountrySettings);
-                    setShowCostData(false);
-                    setShowShippingRates(false);
-                  }}
-                  className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
-                    showCountrySettings
-                      ? 'bg-orange-600 text-white'
-                      : countryConfigs
-                      ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <Settings className="w-4 h-4" />
-                  <span className="text-sm font-medium">Settings</span>
-                  {showCountrySettings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-              </div>
-            )}
+              {/* Settings Button - All Users (read-only for viewers) */}
+              <button
+                onClick={() => {
+                  setShowCountrySettings(!showCountrySettings);
+                  setShowCostData(false);
+                  setShowShippingRates(false);
+                }}
+                className={`flex items-center justify-center gap-2 px-4 py-2 min-w-[100px] rounded-lg transition-colors ${
+                  showCountrySettings
+                    ? 'bg-orange-600 text-white'
+                    : countryConfigs
+                    ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Settings className="w-4 h-4" />
+                <span className="text-sm font-medium">Settings</span>
+                {showCountrySettings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           {/* Collapsible Sections - Lazy loaded */}
@@ -1549,6 +1538,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
               <Suspense fallback={<TabLoadingFallback />}>
                 <ShippingRatesTab
                   shippingRates={shippingRates}
+                  isAdmin={isAdmin}
                 />
               </Suspense>
             </div>
@@ -1560,6 +1550,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
                 <CountrySettingsTab
                   countryConfigs={countryConfigs}
                   availableCategories={availableCategories}
+                  isAdmin={isAdmin}
                 />
               </Suspense>
             </div>
@@ -1651,8 +1642,8 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           formatPercent={formatPercent}
         />
 
-        {/* Amazon Expenses Export for PriceLab - Show when All Marketplaces selected */}
-        {filterMarketplace === 'all' && skuProfitability.length > 0 && (
+        {/* Amazon Expenses Export for PriceLab - Show when All Marketplaces selected - Admin Only */}
+        {isAdmin && filterMarketplace === 'all' && skuProfitability.length > 0 && (
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-4 mb-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1690,8 +1681,8 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           </div>
         )}
 
-        {/* Export for Pricing Calculator - Show only when single marketplace selected and has category data */}
-        {filterMarketplace !== 'all' && selectedMarketplaces.size === 0 && categoryProfitability.length > 0 && (
+        {/* Export for Pricing Calculator - Show only when single marketplace selected and has category data - Admin Only */}
+        {isAdmin && filterMarketplace !== 'all' && selectedMarketplaces.size === 0 && categoryProfitability.length > 0 && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4 mb-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1751,6 +1742,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
             productNames={productNames}
             formatMoney={formatMoney}
             onSelectItem={setSelectedItem}
+            isAdmin={isAdmin}
           />
         )}
 
@@ -1785,6 +1777,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
             formatMoney={formatMoney}
             transactionData={transactionData}
             marketplace={filterMarketplace}
+            selectedMarketplaces={selectedMarketplaces}
           />
         </Suspense>
       </div>

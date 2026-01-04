@@ -28,6 +28,7 @@ interface ProfitabilityDetailsTableProps {
   productNames: string[];
   formatMoney: (amount: number) => string;
   onSelectItem: (item: SelectedItemType | null) => void;
+  isAdmin?: boolean;
 }
 
 export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps> = ({
@@ -40,6 +41,7 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
   productNames,
   formatMoney,
   onSelectItem,
+  isAdmin = false,
 }) => {
   // Get filter state from context
   const {
@@ -379,14 +381,16 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
             </div>
           )}
         </div>
-        <button
-          onClick={handleExportExcel}
-          className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg flex items-center gap-1.5 transition-colors"
-          title="Export to Excel"
-        >
-          <Download className="w-4 h-4" />
-          Export
-        </button>
+        {isAdmin && (
+          <button
+            onClick={handleExportExcel}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg flex items-center gap-1.5 transition-colors"
+            title="Export to Excel"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+        )}
       </div>
 
       {/* Filter dropdowns */}

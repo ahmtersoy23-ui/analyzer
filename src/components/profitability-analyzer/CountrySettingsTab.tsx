@@ -22,6 +22,7 @@ const PRICELAB_URL = 'http://78.47.117.36:3000'; // PriceLab frontend URL
 interface CountrySettingsTabProps {
   countryConfigs: AllCountryConfigs;
   availableCategories: string[];  // Transaction'lardan gelen mevcut kategoriler
+  isAdmin?: boolean;
 }
 
 const MARKETPLACE_INFO: Record<MarketplaceCode, { label: string; flag: string; currency: string }> = {
@@ -43,6 +44,7 @@ type SettingsView = 'country' | 'exchangeRates';
 const CountrySettingsTab: React.FC<CountrySettingsTabProps> = ({
   countryConfigs,
   availableCategories,
+  isAdmin = false,
 }) => {
   const [selectedCountry, setSelectedCountry] = useState<MarketplaceCode>('US');
   const [settingsView, setSettingsView] = useState<SettingsView>('country');
@@ -294,18 +296,20 @@ const CountrySettingsTab: React.FC<CountrySettingsTabProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-indigo-600">
-                  Bu ayarları görüntülüyorsunuz. Düzenlemeler için PriceLab kullanın.
+                  Bu ayarları görüntülüyorsunuz.{isAdmin ? ' Düzenlemeler için PriceLab kullanın.' : ''}
                 </p>
               </div>
-              <a
-                href={`${PRICELAB_URL}/settings`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                <ExternalLink className="w-4 h-4" />
-                PriceLab'da Düzenle
-              </a>
+              {isAdmin && (
+                <a
+                  href={`${PRICELAB_URL}/settings`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  PriceLab'da Düzenle
+                </a>
+              )}
             </div>
           </div>
 

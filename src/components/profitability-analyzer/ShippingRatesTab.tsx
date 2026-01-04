@@ -9,6 +9,7 @@ import { ShippingRateTable, ShippingRoute } from '../../types/profitability';
 
 interface ShippingRatesTabProps {
   shippingRates: ShippingRateTable;
+  isAdmin?: boolean;
 }
 
 const ROUTE_LABELS: Record<ShippingRoute, { label: string; flag: string }> = {
@@ -34,6 +35,7 @@ const PRICELAB_URL = 'http://78.47.117.36:3000'; // PriceLab frontend URL
 
 const ShippingRatesTab: React.FC<ShippingRatesTabProps> = ({
   shippingRates,
+  isAdmin = false,
 }) => {
   const [selectedRoute, setSelectedRoute] = useState<ShippingRoute>('US-TR');
 
@@ -54,17 +56,19 @@ const ShippingRatesTab: React.FC<ShippingRatesTabProps> = ({
               🚚 Kargo Cetveli
             </h3>
             <p className="text-sm text-indigo-600 mb-4">
-              Kargo tarifelerini görüntülüyorsunuz. Tarife düzenlemeleri için PriceLab kullanın.
+              Kargo tarifelerini görüntülüyorsunuz.{isAdmin ? ' Tarife düzenlemeleri için PriceLab kullanın.' : ''}
             </p>
-            <a
-              href={`${PRICELAB_URL}/shipping`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-              PriceLab'da Düzenle
-            </a>
+            {isAdmin && (
+              <a
+                href={`${PRICELAB_URL}/shipping`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                PriceLab'da Düzenle
+              </a>
+            )}
           </div>
           {shippingRates.lastUpdated && (
             <div className="text-right">

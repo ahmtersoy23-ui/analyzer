@@ -7,10 +7,10 @@ import { getMarketplaceCurrency, CURRENCY_SYMBOLS } from '../utils/currencyExcha
 import type { MarketplaceCode, TransactionData, MarketplaceConfig } from '../types/transaction';
 import { MARKETPLACE_CONFIGS, ZONE_NAMES } from '../constants/marketplaces';
 import { calculateAnalytics } from '../services/analytics/analyticsEngine';
-import { normalizeAdjustmentDescription, normalizeInventoryFeeDescription, consolidateSmallGroups } from '../services/analytics/calculations';
+import { normalizeAdjustmentDescription, normalizeInventoryFeeDescription } from '../services/analytics/calculations';
 import { processExcelFile, detectMarketplaceFromFile } from '../services/fileProcessor';
 import { fetchProductMapping, createProductMap, enrichTransaction } from '../services/productMapping';
-import { fetchTransactions, fetchTransactionStats, saveTransactions, TransactionApiData } from '../services/api/configApi';
+import { fetchTransactions, fetchTransactionStats, TransactionApiData } from '../services/api/configApi';
 
 // Import extracted helpers and components
 import { formatDateHuman, translateDescription } from './transaction-analyzer/helpers';
@@ -237,11 +237,6 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
   // processFile now uses the extracted fileProcessor service
   const processFile = async (file: File, detectedMarketplace?: MarketplaceCode): Promise<TransactionData[]> => {
     return processExcelFile(file, detectedMarketplace);
-  };
-
-  // Quick marketplace detection (for file upload preview)
-  const detectMarketplaceQuick = async (file: File): Promise<MarketplaceCode | null> => {
-    return detectMarketplaceFromFile(file);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -930,8 +925,8 @@ const AmazonTransactionAnalyzer: React.FC<TransactionAnalyzerProps> = ({
               )}
               </div>
 
-              {/* Second Row: PDF, Excel, Advanced - Only show when data exists */}
-              {allData.length > 0 && (
+              {/* Second Row: PDF, Excel - Only show when data exists and user is admin */}
+              {allData.length > 0 && isAdmin && (
                 <div className="flex items-center gap-2 justify-end">
                   <button
                     onClick={exportToPDF}
