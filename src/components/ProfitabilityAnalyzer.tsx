@@ -149,6 +149,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   const [costSummary, setCostSummary] = useState<CostDataSummary | null>(null);
   const [shippingRates, setShippingRates] = useState<ShippingRateTable | null>(null);
   const [countryConfigs, setCountryConfigs] = useState<AllCountryConfigs | null>(null);
+  const [configsLoading, setConfigsLoading] = useState(true);
 
   // NAME Overrides - NAME bazlı manuel girilen özel kargo ve FBM kaynak bilgileri
   // Bir NAME'e girilen değer, o NAME altındaki tüm FBM SKU'lara uygulanır
@@ -352,6 +353,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
   // ============================================
   useEffect(() => {
     const loadConfigs = async () => {
+      setConfigsLoading(true);
       try {
         // Load configs from API in parallel
         const [rates, configs] = await Promise.all([
@@ -366,6 +368,8 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
         // Fallback to empty/default configs
         setShippingRates(createEmptyShippingRates());
         setCountryConfigs(createDefaultCountryConfigs());
+      } finally {
+        setConfigsLoading(false);
       }
     };
 
@@ -1565,6 +1569,14 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
             </div>
           )}
         </div>
+
+        {/* Loading indicator for configs */}
+        {configsLoading && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4 flex items-center gap-3">
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <span className="text-blue-700 text-sm">Loading shipping rates and country configs...</span>
+          </div>
+        )}
 
         {/* Exchange Rate Warning - shows when API fetch failed */}
         {exchangeRateStatus?.error && (

@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useCallback, useState } from 'react';
-import { Tag, Download, ChevronRight } from 'lucide-react';
+import { Tag, Download, ChevronRight, Package } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useProfitabilityFilters } from '../../contexts/ProfitabilityFilterContext';
 import type { SelectedItemType } from './PieChartModal';
@@ -447,7 +447,18 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
           : `${displayCategories.length} categories`}
       </div>
 
-      {/* Table with Drag-to-Scroll */}
+      {/* Empty State */}
+      {getItemCount() === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-slate-200 rounded-lg bg-slate-50">
+          <Package className="w-12 h-12 text-slate-300 mb-4" />
+          <h3 className="text-lg font-medium text-slate-600 mb-2">No Data Found</h3>
+          <p className="text-sm text-slate-500 max-w-md">
+            No {viewModeLabels[detailsViewMode]?.toLowerCase() || 'items'} match your current filters.
+            Try adjusting the date range, marketplace, or category filters.
+          </p>
+        </div>
+      ) : (
+      /* Table with Drag-to-Scroll */
       <div
         ref={tableContainerRef}
         className="overflow-x-auto overflow-y-auto max-h-[600px] border border-slate-200 rounded-lg cursor-grab select-none"
@@ -501,6 +512,7 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
           />
         )}
       </div>
+      )}
 
       {/* Pagination Controls - for SKU and Product views */}
       {((detailsViewMode === 'sku' && displaySkus.length > itemsPerPage) ||
