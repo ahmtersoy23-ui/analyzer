@@ -7,6 +7,7 @@ export interface TransactionData {
   fileName: string;
   date: Date;
   dateOnly: string;  // YYYY-MM-DD format - original date without timezone conversion for filtering
+  timeOnly?: string; // HH:MM format - original time without timezone conversion
   type: string;
   categoryType: string;
   orderId: string;

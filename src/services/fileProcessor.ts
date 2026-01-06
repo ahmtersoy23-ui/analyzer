@@ -13,6 +13,7 @@ import {
   parseNumber,
   parseDate,
   extractDateOnly,
+  extractTimeOnly,
   detectMarketplace,
 } from '../components/transaction-analyzer/helpers';
 
@@ -276,6 +277,7 @@ function processRow(
     fileName: fileName,
     date: parsedDate,
     dateOnly: extractDateOnly(rawDateValue),
+    timeOnly: extractTimeOnly(rawDateValue),
     type: String(typeValue || ''),
     categoryType,
     orderId: String(getCell('orderId') || ''),

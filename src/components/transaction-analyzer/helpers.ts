@@ -253,6 +253,48 @@ export const extractDateOnly = (value: unknown): string => {
 };
 
 /**
+ * Extract time from raw date string without timezone conversion
+ * Returns HH:MM format (24-hour)
+ */
+export const extractTimeOnly = (value: unknown): string => {
+  if (!value) return '';
+  try {
+    const str = String(value).trim();
+
+    // Match time with AM/PM: "2:53:19 PM" or "02:53 AM"
+    const ampmMatch = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)/i);
+    if (ampmMatch) {
+      let hour = parseInt(ampmMatch[1], 10);
+      const minute = ampmMatch[2];
+      const ampm = ampmMatch[3].toUpperCase();
+
+      // Convert to 24-hour format
+      if (ampm === 'PM' && hour !== 12) {
+        hour += 12;
+      } else if (ampm === 'AM' && hour === 12) {
+        hour = 0;
+      }
+
+      return `${hour.toString().padStart(2, '0')}:${minute}`;
+    }
+
+    // Match 24-hour time: "14:30" or "14:30:00"
+    const time24Match = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
+    if (time24Match) {
+      const hour = parseInt(time24Match[1], 10);
+      const minute = time24Match[2];
+      if (hour >= 0 && hour < 24) {
+        return `${hour.toString().padStart(2, '0')}:${minute}`;
+      }
+    }
+
+    return '';
+  } catch {
+    return '';
+  }
+};
+
+/**
  * Parse date from various formats
  */
 export const parseDate = (value: unknown): Date | null => {

@@ -68,11 +68,21 @@ const CATEGORY_COLORS = [
 ];
 
 /**
- * Get hour from transaction date
- * Amazon reports times in local marketplace timezone, so we use the raw hour directly
+ * Get hour from transaction's timeOnly field (HH:MM format)
+ * This is the raw hour extracted from the original date string without timezone conversion
  */
-const getLocalHour = (date: Date): number => {
-  return date.getHours();
+const getHourFromTimeOnly = (timeOnly?: string): number => {
+  if (!timeOnly) return -1;
+
+  const match = timeOnly.match(/^(\d{2}):/);
+  if (match) {
+    const hour = parseInt(match[1], 10);
+    if (hour >= 0 && hour < 24) {
+      return hour;
+    }
+  }
+
+  return -1;
 };
 
 // ============================================
@@ -150,9 +160,9 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
     }));
 
     filteredOrders.forEach(tx => {
-      const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      // Using timeOnly for accurate hour without timezone conversion
       const marketplace = tx.marketplaceCode || 'US';
-      const hour = getLocalHour(date);
+      const hour = getHourFromTimeOnly(tx.timeOnly);
 
       if (hour >= 0 && hour < 24) {
         hours[hour].orders++;
@@ -184,9 +194,9 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
     const countrySet = new Set<string>();
 
     filteredOrders.forEach(tx => {
-      const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      // Using timeOnly for accurate hour without timezone conversion
       const country = tx.marketplaceCode || 'Unknown';
-      const hour = getLocalHour(date);
+      const hour = getHourFromTimeOnly(tx.timeOnly);
 
       if (hour >= 0 && hour < 24) {
         countrySet.add(country);
@@ -228,9 +238,9 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
     }));
 
     filteredOrders.forEach(tx => {
-      const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      // Using timeOnly for accurate hour without timezone conversion
       const marketplace = tx.marketplaceCode || 'US';
-      const hour = getLocalHour(date);
+      const hour = getHourFromTimeOnly(tx.timeOnly);
       const category = tx.productCategory || 'Uncategorized';
 
       if (!topCategories.includes(category)) return;
@@ -264,9 +274,9 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
     }));
 
     filteredOrders.forEach(tx => {
-      const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      // Using timeOnly for accurate hour without timezone conversion
       const marketplace = tx.marketplaceCode || 'US';
-      const hour = getLocalHour(date);
+      const hour = getHourFromTimeOnly(tx.timeOnly);
       const fulfillment = tx.fulfillment === 'FBA' ? 'FBA' : tx.fulfillment === 'FBM' ? 'FBM' : null;
 
       if (!fulfillment || hour < 0 || hour >= 24) return;
