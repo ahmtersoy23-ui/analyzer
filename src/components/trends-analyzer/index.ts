@@ -13,3 +13,4 @@ export { executeQuery, getDateRangeFromPreset } from './queryEngine';
 // New Analyzers
 export { default as FbmShippingAnalyzer } from './FbmShippingAnalyzer';
 export { default as OrderHourAnalyzer } from './OrderHourAnalyzer';
+export { default as OrderDayAnalyzer } from './OrderDayAnalyzer';

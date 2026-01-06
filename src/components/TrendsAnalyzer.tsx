@@ -27,6 +27,7 @@ import {
   executeQuery,
   FbmShippingAnalyzer,
   OrderHourAnalyzer,
+  OrderDayAnalyzer,
   type QueryParams,
   type QueryResults,
 } from './trends-analyzer';
@@ -180,7 +181,7 @@ const createEmptyAggregatedData = (): AggregatedData => ({
 // MAIN COMPONENT
 // ============================================
 
-type AnalyzerTab = 'trends' | 'fbm-shipping' | 'order-hours';
+type AnalyzerTab = 'trends' | 'fbm-shipping' | 'order-hours' | 'order-days';
 
 const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
   // ============================================
@@ -619,6 +620,17 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
             <Clock className="w-4 h-4" />
             Sipariş Saati Analizi
           </button>
+          <button
+            onClick={() => setActiveTab('order-days')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'order-days'
+                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            Ayın Günleri Analizi
+          </button>
         </div>
 
         {/* FBM Shipping Analyzer Tab */}
@@ -629,6 +641,11 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
         {/* Order Hour Analyzer Tab */}
         {activeTab === 'order-hours' && (
           <OrderHourAnalyzer transactionData={transactionData} />
+        )}
+
+        {/* Order Day Analyzer Tab */}
+        {activeTab === 'order-days' && (
+          <OrderDayAnalyzer transactionData={transactionData} />
         )}
 
         {/* Trends Analyzer Tab (Original Content) */}
