@@ -67,6 +67,14 @@ const CATEGORY_COLORS = [
   '#ec4899', '#06b6d4', '#84cc16', '#6366f1', '#f97316',
 ];
 
+/**
+ * Get hour from transaction date
+ * Amazon reports times in local marketplace timezone, so we use the raw hour directly
+ */
+const getLocalHour = (date: Date): number => {
+  return date.getHours();
+};
+
 // ============================================
 // COMPONENT
 // ============================================
@@ -143,13 +151,13 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
 
     filteredOrders.forEach(tx => {
       const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
-      const hour = date.getHours();
+      const marketplace = tx.marketplaceCode || 'US';
+      const hour = getLocalHour(date);
 
       if (hour >= 0 && hour < 24) {
         hours[hour].orders++;
         hours[hour].quantity += Math.abs(tx.quantity || 0);
 
-        const marketplace = tx.marketplaceCode || 'US';
         const sourceCurrency = getMarketplaceCurrency(marketplace);
         const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
         const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
@@ -177,8 +185,8 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
 
     filteredOrders.forEach(tx => {
       const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
-      const hour = date.getHours();
       const country = tx.marketplaceCode || 'Unknown';
+      const hour = getLocalHour(date);
 
       if (hour >= 0 && hour < 24) {
         countrySet.add(country);
@@ -189,8 +197,7 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
         } else if (metric === 'quantity') {
           data[hour][country] = current + Math.abs(tx.quantity || 0);
         } else {
-          const marketplace = tx.marketplaceCode || 'US';
-          const sourceCurrency = getMarketplaceCurrency(marketplace);
+          const sourceCurrency = getMarketplaceCurrency(country);
           const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
           const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
           data[hour][country] = current + usdRevenue;
@@ -222,7 +229,8 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
 
     filteredOrders.forEach(tx => {
       const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
-      const hour = date.getHours();
+      const marketplace = tx.marketplaceCode || 'US';
+      const hour = getLocalHour(date);
       const category = tx.productCategory || 'Uncategorized';
 
       if (!topCategories.includes(category)) return;
@@ -235,7 +243,6 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
         } else if (metric === 'quantity') {
           data[hour][category] = current + Math.abs(tx.quantity || 0);
         } else {
-          const marketplace = tx.marketplaceCode || 'US';
           const sourceCurrency = getMarketplaceCurrency(marketplace);
           const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
           const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
@@ -258,7 +265,8 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
 
     filteredOrders.forEach(tx => {
       const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
-      const hour = date.getHours();
+      const marketplace = tx.marketplaceCode || 'US';
+      const hour = getLocalHour(date);
       const fulfillment = tx.fulfillment === 'FBA' ? 'FBA' : tx.fulfillment === 'FBM' ? 'FBM' : null;
 
       if (!fulfillment || hour < 0 || hour >= 24) return;
@@ -270,7 +278,6 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
       } else if (metric === 'quantity') {
         data[hour][fulfillment] = current + Math.abs(tx.quantity || 0);
       } else {
-        const marketplace = tx.marketplaceCode || 'US';
         const sourceCurrency = getMarketplaceCurrency(marketplace);
         const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
         const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
