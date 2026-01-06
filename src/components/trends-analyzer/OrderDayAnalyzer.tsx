@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { Calendar, Filter, Globe, Package, Layers, BarChart3 } from 'lucide-react';
+import { Calendar, Filter, Globe, Package, Layers, BarChart3, CalendarDays } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -93,8 +93,24 @@ const OrderDayAnalyzer: React.FC<OrderDayAnalyzerProps> = ({ transactionData }) 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedFulfillment, setSelectedFulfillment] = useState<string>('all');
   const [metric, setMetric] = useState<MetricType>('orders');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
 
   const formatMoney = createMoneyFormatter('USD');
+
+  // Get date range from transactions
+  const dateRange = useMemo(() => {
+    let minDate: string | null = null;
+    let maxDate: string | null = null;
+
+    transactionData.forEach(tx => {
+      const dateStr = tx.dateOnly || (tx.date instanceof Date ? tx.date.toISOString().split('T')[0] : new Date(tx.date).toISOString().split('T')[0]);
+      if (!minDate || dateStr < minDate) minDate = dateStr;
+      if (!maxDate || dateStr > maxDate) maxDate = dateStr;
+    });
+
+    return { minDate, maxDate };
+  }, [transactionData]);
 
   // Get unique values for filters
   const { marketplaces, categories } = useMemo(() => {
@@ -119,9 +135,17 @@ const OrderDayAnalyzer: React.FC<OrderDayAnalyzerProps> = ({ transactionData }) 
       if (selectedMarketplace !== 'all' && tx.marketplaceCode !== selectedMarketplace) return false;
       if (selectedCategory !== 'all' && tx.productCategory !== selectedCategory) return false;
       if (selectedFulfillment !== 'all' && tx.fulfillment !== selectedFulfillment) return false;
+
+      // Date filter
+      if (startDate || endDate) {
+        const txDate = tx.dateOnly || (tx.date instanceof Date ? tx.date.toISOString().split('T')[0] : new Date(tx.date).toISOString().split('T')[0]);
+        if (startDate && txDate < startDate) return false;
+        if (endDate && txDate > endDate) return false;
+      }
+
       return true;
     });
-  }, [transactionData, selectedMarketplace, selectedCategory, selectedFulfillment]);
+  }, [transactionData, selectedMarketplace, selectedCategory, selectedFulfillment, startDate, endDate]);
 
   // Calculate daily distribution (Overview)
   const dailyData = useMemo((): DayData[] => {
@@ -339,6 +363,11 @@ const OrderDayAnalyzer: React.FC<OrderDayAnalyzerProps> = ({ transactionData }) 
               <h2 className="text-lg font-semibold text-slate-800">Ayın Günlerine Göre Sipariş Analizi</h2>
               <p className="text-sm text-slate-500">
                 {filteredOrders.length.toLocaleString()} sipariş analiz edildi
+                {(startDate || endDate) && (
+                  <span className="ml-2 text-purple-600">
+                    ({startDate || dateRange.minDate} - {endDate || dateRange.maxDate})
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -346,6 +375,38 @@ const OrderDayAnalyzer: React.FC<OrderDayAnalyzerProps> = ({ transactionData }) 
 
         {/* Filters */}
         <div className="flex flex-wrap gap-4">
+          {/* Date Range Filter */}
+          <div className="flex items-center gap-2">
+            <CalendarDays className="w-4 h-4 text-slate-400" />
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              min={dateRange.minDate || undefined}
+              max={dateRange.maxDate || undefined}
+              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="Başlangıç"
+            />
+            <span className="text-slate-400">-</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              min={startDate || dateRange.minDate || undefined}
+              max={dateRange.maxDate || undefined}
+              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="Bitiş"
+            />
+            {(startDate || endDate) && (
+              <button
+                onClick={() => { setStartDate(''); setEndDate(''); }}
+                className="text-xs text-slate-500 hover:text-slate-700 underline"
+              >
+                Temizle
+              </button>
+            )}
+          </div>
+
           {/* View Mode */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-600">Görünüm:</span>
