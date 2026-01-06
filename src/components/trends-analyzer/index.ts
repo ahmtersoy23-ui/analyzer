@@ -9,3 +9,7 @@ export { QueryResultsPanel } from './QueryResultsPanel';
 export type { QueryResults, QueryResultItem } from './QueryResultsPanel';
 
 export { executeQuery, getDateRangeFromPreset } from './queryEngine';
+
+// New Analyzers
+export { default as FbmShippingAnalyzer } from './FbmShippingAnalyzer';
+export { default as OrderHourAnalyzer } from './OrderHourAnalyzer';

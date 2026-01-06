@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { TrendingUp, BarChart3, Calendar, DollarSign, RefreshCw, Globe, Package, Layers, Eye, EyeOff, Percent } from 'lucide-react';
+import { TrendingUp, BarChart3, Calendar, DollarSign, RefreshCw, Globe, Package, Layers, Eye, EyeOff, Percent, Truck, Clock } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -25,6 +25,8 @@ import {
   QueryBuilder,
   QueryResultsPanel,
   executeQuery,
+  FbmShippingAnalyzer,
+  OrderHourAnalyzer,
   type QueryParams,
   type QueryResults,
 } from './trends-analyzer';
@@ -178,10 +180,13 @@ const createEmptyAggregatedData = (): AggregatedData => ({
 // MAIN COMPONENT
 // ============================================
 
+type AnalyzerTab = 'trends' | 'fbm-shipping' | 'order-hours';
+
 const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
   // ============================================
   // STATE
   // ============================================
+  const [activeTab, setActiveTab] = useState<AnalyzerTab>('trends');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [viewMode, setViewMode] = useState<ViewMode>('country');
@@ -579,6 +584,56 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <div className="max-w-7xl mx-auto">
+        {/* Main Tab Navigation */}
+        <div className="bg-white rounded-xl shadow-sm p-2 mb-6 flex gap-2">
+          <button
+            onClick={() => setActiveTab('trends')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'trends'
+                ? 'bg-cyan-50 text-cyan-700 border border-cyan-200'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4" />
+            Trend Analizi
+          </button>
+          <button
+            onClick={() => setActiveTab('fbm-shipping')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'fbm-shipping'
+                ? 'bg-orange-50 text-orange-700 border border-orange-200'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Truck className="w-4 h-4" />
+            FBM Kargo Analizi
+          </button>
+          <button
+            onClick={() => setActiveTab('order-hours')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'order-hours'
+                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            Sipariş Saati Analizi
+          </button>
+        </div>
+
+        {/* FBM Shipping Analyzer Tab */}
+        {activeTab === 'fbm-shipping' && (
+          <FbmShippingAnalyzer transactionData={transactionData} />
+        )}
+
+        {/* Order Hour Analyzer Tab */}
+        {activeTab === 'order-hours' && (
+          <OrderHourAnalyzer transactionData={transactionData} />
+        )}
+
+        {/* Trends Analyzer Tab (Original Content) */}
+        {activeTab === 'trends' && (
+          <>
         {/* Query Builder - Quick Analysis */}
         <QueryBuilder
           onQuerySelect={handleQuerySelect}
@@ -978,6 +1033,8 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
     </div>
   );
