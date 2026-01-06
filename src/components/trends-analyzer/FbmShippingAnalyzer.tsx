@@ -1,5 +1,5 @@
 /**
- * FBM Shipping Cost Analyzer
+ * FBM Refund Shipping Cost Analyzer
  * Links Order transactions with Shipping Services by Order ID
  * Provides SKU/Product/Parent/Category level FBM shipping cost analysis
  */
@@ -23,11 +23,10 @@ interface ShippingCostItem {
   name?: string;
   parent?: string;
   category?: string;
-  orders: number;
-  quantity: number;
+  orderQuantity: number;
+  returnQuantity: number;
   revenue: number;
   shippingCost: number;
-  shippingCostPerUnit: number;
   shippingCostPercentage: number;
   marketplace?: string;
 }
@@ -44,7 +43,7 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
   const [groupBy, setGroupBy] = useState<GroupByType>('product');
   const [selectedMarketplace, setSelectedMarketplace] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'shippingCost' | 'shippingCostPerUnit' | 'orders'>('shippingCost');
+  const [sortBy, setSortBy] = useState<'shippingCost' | 'orderQuantity' | 'returnQuantity'>('shippingCost');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -131,7 +130,8 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
       parent?: string;
       category?: string;
       orderIds: Set<string>;
-      quantity: number;
+      orderQuantity: number;
+      returnQuantity: number;
       revenue: number;
       shippingCost: number;
       marketplace?: string;
@@ -172,7 +172,8 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
           parent: tx.parent,
           category: tx.productCategory,
           orderIds: new Set(),
-          quantity: 0,
+          orderQuantity: 0,
+          returnQuantity: 0,
           revenue: 0,
           shippingCost: 0,
           marketplace: tx.marketplaceCode
@@ -196,7 +197,13 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
       const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
       const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
 
-      group.quantity += Math.abs(tx.quantity || 0);
+      // Positive quantity = order, negative = return
+      const qty = tx.quantity || 0;
+      if (qty > 0) {
+        group.orderQuantity += qty;
+      } else {
+        group.returnQuantity += Math.abs(qty);
+      }
       group.revenue += usdRevenue;
     });
 
@@ -208,11 +215,10 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
       name: g.name,
       parent: g.parent,
       category: g.category,
-      orders: g.orderIds.size,
-      quantity: g.quantity,
+      orderQuantity: g.orderQuantity,
+      returnQuantity: g.returnQuantity,
       revenue: g.revenue,
       shippingCost: g.shippingCost,
-      shippingCostPerUnit: g.quantity > 0 ? g.shippingCost / g.quantity : 0,
       shippingCostPercentage: g.revenue > 0 ? (g.shippingCost / g.revenue) * 100 : 0,
       marketplace: g.marketplace
     }));
@@ -226,11 +232,11 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
 
     // Calculate totals
     const totals = items.reduce((acc, item) => ({
-      orders: acc.orders + item.orders,
-      quantity: acc.quantity + item.quantity,
+      orderQuantity: acc.orderQuantity + item.orderQuantity,
+      returnQuantity: acc.returnQuantity + item.returnQuantity,
       revenue: acc.revenue + item.revenue,
       shippingCost: acc.shippingCost + item.shippingCost
-    }), { orders: 0, quantity: 0, revenue: 0, shippingCost: 0 });
+    }), { orderQuantity: 0, returnQuantity: 0, revenue: 0, shippingCost: 0 });
 
     return { items, totals };
   }, [transactionData, shippingCostMap, groupBy, selectedMarketplace, selectedCategory, startDate, endDate, dateRange, sortBy, sortOrder]);
@@ -273,18 +279,17 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
   };
 
   const exportToCSV = () => {
-    const headers = ['Label', 'SKU', 'Name', 'Parent', 'Category', 'Orders', 'Quantity', 'Revenue (USD)', 'Shipping Cost (USD)', 'Cost/Unit', 'Cost %'];
+    const headers = ['Label', 'SKU', 'Name', 'Parent', 'Category', 'Order Qty', 'Return Qty', 'Revenue (USD)', 'Shipping Cost (USD)', 'Cost %'];
     const rows = analysisData.items.map(item => [
       item.label,
       item.sku || '',
       item.name || '',
       item.parent || '',
       item.category || '',
-      item.orders,
-      item.quantity,
+      item.orderQuantity,
+      item.returnQuantity,
       item.revenue.toFixed(2),
       item.shippingCost.toFixed(2),
-      item.shippingCostPerUnit.toFixed(2),
       item.shippingCostPercentage.toFixed(1)
     ]);
 
@@ -293,7 +298,7 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `fbm-shipping-analysis-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `fbm-refund-shipping-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -307,7 +312,7 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
             <Truck className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-800">FBM Shipping Cost Analyzer</h2>
+            <h2 className="text-xl font-bold text-slate-800">FBM Refund Shipping Cost</h2>
             <p className="text-sm text-slate-500">Order ID ile Shipping Services eşleştirmesi</p>
           </div>
         </div>
@@ -422,7 +427,7 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
           <div className="text-xs text-orange-600 mb-1">Toplam Kargo Maliyeti</div>
           <div className="text-xl font-bold text-orange-700">{formatMoney(analysisData.totals.shippingCost)}</div>
@@ -430,14 +435,6 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="text-xs text-blue-600 mb-1">Toplam Gelir</div>
           <div className="text-xl font-bold text-blue-700">{formatMoney(analysisData.totals.revenue)}</div>
-        </div>
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="text-xs text-green-600 mb-1">Ortalama Kargo/Ürün</div>
-          <div className="text-xl font-bold text-green-700">
-            {formatMoney(analysisData.totals.quantity > 0
-              ? analysisData.totals.shippingCost / analysisData.totals.quantity
-              : 0)}
-          </div>
         </div>
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
           <div className="text-xs text-purple-600 mb-1">Kargo Oranı</div>
@@ -461,14 +458,22 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
               </th>
               <th
                 className="text-right py-3 px-4 font-medium text-slate-600 cursor-pointer hover:text-slate-800"
-                onClick={() => handleSort('orders')}
+                onClick={() => handleSort('orderQuantity')}
               >
                 <div className="flex items-center justify-end gap-1">
-                  Sipariş
-                  <SortIcon column="orders" />
+                  Sipariş Adedi
+                  <SortIcon column="orderQuantity" />
                 </div>
               </th>
-              <th className="text-right py-3 px-4 font-medium text-slate-600">Adet</th>
+              <th
+                className="text-right py-3 px-4 font-medium text-slate-600 cursor-pointer hover:text-slate-800"
+                onClick={() => handleSort('returnQuantity')}
+              >
+                <div className="flex items-center justify-end gap-1">
+                  Return Adedi
+                  <SortIcon column="returnQuantity" />
+                </div>
+              </th>
               <th className="text-right py-3 px-4 font-medium text-slate-600">Gelir</th>
               <th
                 className="text-right py-3 px-4 font-medium text-slate-600 cursor-pointer hover:text-slate-800"
@@ -479,34 +484,24 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
                   <SortIcon column="shippingCost" />
                 </div>
               </th>
-              <th
-                className="text-right py-3 px-4 font-medium text-slate-600 cursor-pointer hover:text-slate-800"
-                onClick={() => handleSort('shippingCostPerUnit')}
-              >
-                <div className="flex items-center justify-end gap-1">
-                  Kargo/Ürün
-                  <SortIcon column="shippingCostPerUnit" />
-                </div>
-              </th>
               <th className="text-right py-3 px-4 font-medium text-slate-600">%</th>
             </tr>
           </thead>
           <tbody>
             {analysisData.items.slice(0, 50).map((item, idx) => (
               <tr key={item.key} className={idx % 2 === 0 ? 'bg-slate-50' : ''}>
-                <td className="py-3 px-4">
-                  <div className="font-medium text-slate-800 truncate max-w-xs" title={item.label}>
+                <td className="py-3 px-4 text-left">
+                  <div className="font-semibold text-indigo-700 truncate max-w-xs" title={item.label}>
                     {item.label}
                   </div>
                   {groupBy !== 'category' && item.category && (
-                    <div className="text-xs text-slate-500">{item.category}</div>
+                    <div className="text-xs text-slate-500 text-left">{item.category}</div>
                   )}
                 </td>
-                <td className="text-right py-3 px-4 text-slate-700">{item.orders.toLocaleString()}</td>
-                <td className="text-right py-3 px-4 text-slate-700">{item.quantity.toLocaleString()}</td>
+                <td className="text-right py-3 px-4 text-slate-700">{item.orderQuantity.toLocaleString()}</td>
+                <td className="text-right py-3 px-4 text-red-600 font-medium">{item.returnQuantity.toLocaleString()}</td>
                 <td className="text-right py-3 px-4 text-slate-700">{formatMoney(item.revenue)}</td>
                 <td className="text-right py-3 px-4 font-medium text-orange-600">{formatMoney(item.shippingCost)}</td>
-                <td className="text-right py-3 px-4 font-medium text-slate-800">{formatMoney(item.shippingCostPerUnit)}</td>
                 <td className={`text-right py-3 px-4 font-medium ${
                   item.shippingCostPercentage > 20 ? 'text-red-600' :
                   item.shippingCostPercentage > 10 ? 'text-amber-600' : 'text-green-600'
