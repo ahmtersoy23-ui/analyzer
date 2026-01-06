@@ -68,21 +68,24 @@ const CATEGORY_COLORS = [
 ];
 
 /**
- * Get hour from transaction's timeOnly field (HH:MM format)
- * This is the raw hour extracted from the original date string without timezone conversion
+ * Get hour from transaction
+ * Use timeOnly if available (new data), otherwise use UTC hours from date (legacy data)
  */
-const getHourFromTimeOnly = (timeOnly?: string): number => {
-  if (!timeOnly) return -1;
-
-  const match = timeOnly.match(/^(\d{2}):/);
-  if (match) {
-    const hour = parseInt(match[1], 10);
-    if (hour >= 0 && hour < 24) {
-      return hour;
+const getHourFromTransaction = (tx: { timeOnly?: string; date: Date }): number => {
+  // If timeOnly is available (new data with correct parsing), use it
+  if (tx.timeOnly) {
+    const match = tx.timeOnly.match(/^(\d{2}):/);
+    if (match) {
+      const hour = parseInt(match[1], 10);
+      if (hour >= 0 && hour < 24) {
+        return hour;
+      }
     }
   }
 
-  return -1;
+  // Fallback: use UTC hours from date (avoids browser timezone conversion)
+  const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
+  return date.getUTCHours();
 };
 
 // ============================================
@@ -162,7 +165,7 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
     filteredOrders.forEach(tx => {
       // Using timeOnly for accurate hour without timezone conversion
       const marketplace = tx.marketplaceCode || 'US';
-      const hour = getHourFromTimeOnly(tx.timeOnly);
+      const hour = getHourFromTransaction(tx);
 
       if (hour >= 0 && hour < 24) {
         hours[hour].orders++;
@@ -196,7 +199,7 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
     filteredOrders.forEach(tx => {
       // Using timeOnly for accurate hour without timezone conversion
       const country = tx.marketplaceCode || 'Unknown';
-      const hour = getHourFromTimeOnly(tx.timeOnly);
+      const hour = getHourFromTransaction(tx);
 
       if (hour >= 0 && hour < 24) {
         countrySet.add(country);
@@ -240,7 +243,7 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
     filteredOrders.forEach(tx => {
       // Using timeOnly for accurate hour without timezone conversion
       const marketplace = tx.marketplaceCode || 'US';
-      const hour = getHourFromTimeOnly(tx.timeOnly);
+      const hour = getHourFromTransaction(tx);
       const category = tx.productCategory || 'Uncategorized';
 
       if (!topCategories.includes(category)) return;
@@ -276,7 +279,7 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
     filteredOrders.forEach(tx => {
       // Using timeOnly for accurate hour without timezone conversion
       const marketplace = tx.marketplaceCode || 'US';
-      const hour = getHourFromTimeOnly(tx.timeOnly);
+      const hour = getHourFromTransaction(tx);
       const fulfillment = tx.fulfillment === 'FBA' ? 'FBA' : tx.fulfillment === 'FBM' ? 'FBM' : null;
 
       if (!fulfillment || hour < 0 || hour >= 24) return;

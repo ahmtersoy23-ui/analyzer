@@ -6,6 +6,13 @@ const DB_VERSION = 3; // New version for marketplace-based structure
 const TRANSACTIONS_STORE = 'transactions';
 const METADATA_STORE = 'marketplace_metadata';
 
+// Helper to generate timeOnly from date if missing (for legacy data migration)
+const generateTimeOnly = (date: Date): string => {
+  const hours = date.getUTCHours().toString().padStart(2, '0');
+  const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
 // Transaction Data Type
 export interface TransactionData {
   // Unique identifier for deduplication
@@ -16,6 +23,7 @@ export interface TransactionData {
   fileName: string;
   date: Date;
   dateOnly: string;  // YYYY-MM-DD format - original date without timezone conversion for filtering
+  timeOnly?: string; // HH:MM format - original time without timezone conversion
   type: string;
   categoryType: string;
   orderId: string;
@@ -289,11 +297,16 @@ export const getTransactionsByMarketplace = async (marketplaceCode: string): Pro
     const request = index.getAll(marketplaceCode);
 
     request.onsuccess = () => {
-      const transactions: TransactionData[] = request.result.map((trans: any) => ({
-        ...trans,
-        date: new Date(trans.date),
-        uploadDate: new Date(trans.uploadDate)
-      }));
+      const transactions: TransactionData[] = request.result.map((trans: any) => {
+        const date = new Date(trans.date);
+        return {
+          ...trans,
+          date,
+          uploadDate: new Date(trans.uploadDate),
+          // Generate timeOnly from date if not present (legacy data)
+          timeOnly: trans.timeOnly || generateTimeOnly(date)
+        };
+      });
 
       resolve(transactions);
     };
@@ -311,11 +324,16 @@ export const getAllTransactions = async (): Promise<TransactionData[]> => {
     const request = objectStore.getAll();
 
     request.onsuccess = () => {
-      const transactions: TransactionData[] = request.result.map((trans: any) => ({
-        ...trans,
-        date: new Date(trans.date),
-        uploadDate: new Date(trans.uploadDate)
-      }));
+      const transactions: TransactionData[] = request.result.map((trans: any) => {
+        const date = new Date(trans.date);
+        return {
+          ...trans,
+          date,
+          uploadDate: new Date(trans.uploadDate),
+          // Generate timeOnly from date if not present (legacy data)
+          timeOnly: trans.timeOnly || generateTimeOnly(date)
+        };
+      });
 
       resolve(transactions);
     };
