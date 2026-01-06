@@ -68,24 +68,74 @@ const CATEGORY_COLORS = [
 ];
 
 /**
- * Get hour from transaction
- * Use timeOnly if available (new data), otherwise use UTC hours from date (legacy data)
+ * Amazon report timezone offsets (hours from UTC)
+ * - North America: Reports in PST (UTC-8)
+ * - Europe: Reports in UTC
+ * - Others: Reports in UTC
  */
-const getHourFromTransaction = (tx: { timeOnly?: string; date: Date }): number => {
-  // If timeOnly is available (new data with correct parsing), use it
+const AMAZON_REPORT_OFFSETS: Record<string, number> = {
+  US: -8,  // PST
+  CA: -8,  // PST
+  // Europe - UTC (offset 0)
+  UK: 0, DE: 0, FR: 0, IT: 0, ES: 0,
+  // Others - assuming UTC
+  AU: 0, AE: 0, SA: 0, SG: 0, TR: 0,
+};
+
+/**
+ * Local timezone offsets for each marketplace (hours from UTC)
+ */
+const LOCAL_TIMEZONE_OFFSETS: Record<string, number> = {
+  US: -5,   // EST (most populous timezone)
+  CA: -5,   // EST (Toronto/Montreal area)
+  UK: 0,    // GMT
+  DE: 1,    // CET
+  FR: 1,    // CET
+  IT: 1,    // CET
+  ES: 1,    // CET
+  AU: 9,    // GMT+9 (Australian Eastern Standard Time without DST)
+  AE: 4,    // UTC+4 (Gulf Standard Time)
+  SA: 3,    // UTC+3 (Arabia Standard Time)
+  SG: 8,    // SGT
+  TR: 3,    // TRT
+};
+
+/**
+ * Get local hour from transaction
+ * Converts from Amazon's report timezone to local marketplace timezone
+ */
+const getHourFromTransaction = (tx: { timeOnly?: string; date: Date; marketplaceCode?: string }): number => {
+  const marketplace = tx.marketplaceCode || 'US';
+  let rawHour: number;
+
+  // Get raw hour from timeOnly or date
   if (tx.timeOnly) {
     const match = tx.timeOnly.match(/^(\d{2}):/);
     if (match) {
-      const hour = parseInt(match[1], 10);
-      if (hour >= 0 && hour < 24) {
-        return hour;
-      }
+      rawHour = parseInt(match[1], 10);
+    } else {
+      const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      rawHour = date.getUTCHours();
     }
+  } else {
+    const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
+    rawHour = date.getUTCHours();
   }
 
-  // Fallback: use UTC hours from date (avoids browser timezone conversion)
-  const date = tx.date instanceof Date ? tx.date : new Date(tx.date);
-  return date.getUTCHours();
+  // Convert from Amazon report timezone to local marketplace timezone
+  const reportOffset = AMAZON_REPORT_OFFSETS[marketplace] ?? 0;
+  const localOffset = LOCAL_TIMEZONE_OFFSETS[marketplace] ?? 0;
+
+  // Formula: localHour = rawHour - reportOffset + localOffset
+  // Example CA: rawHour=1 (1am PST), reportOffset=-8, localOffset=-5
+  // localHour = 1 - (-8) + (-5) = 1 + 8 - 5 = 4am EST
+  let localHour = rawHour - reportOffset + localOffset;
+
+  // Wrap around 24 hours
+  while (localHour < 0) localHour += 24;
+  while (localHour >= 24) localHour -= 24;
+
+  return localHour;
 };
 
 // ============================================
