@@ -1,11 +1,11 @@
 /**
  * FBM Refund Shipping Cost Analyzer
- * Links Order transactions with Shipping Services by Order ID
- * Provides SKU/Product/Parent/Category level FBM shipping cost analysis
+ * Analyzes Shipping Services costs (ReturnPostageBilling, Adjustment, etc.)
+ * Groups by SKU/Product/Parent/Category with refund quantities from Refund transactions
  */
 
 import React, { useState, useMemo } from 'react';
-import { Truck, Package, Layers, Tags, Filter, Download, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { Truck, Filter, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import type { TransactionData } from '../../types/transaction';
 import { convertCurrency, getMarketplaceCurrency } from '../../utils/currencyExchange';
 import { createMoneyFormatter, formatPercent } from '../../utils/formatters';
@@ -23,11 +23,8 @@ interface ShippingCostItem {
   name?: string;
   parent?: string;
   category?: string;
-  orderQuantity: number;
-  returnQuantity: number;
-  revenue: number;
+  refundQuantity: number;
   shippingCost: number;
-  shippingCostPercentage: number;
   marketplace?: string;
 }
 
@@ -43,17 +40,19 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
   const [groupBy, setGroupBy] = useState<GroupByType>('product');
   const [selectedMarketplace, setSelectedMarketplace] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'shippingCost' | 'orderQuantity' | 'returnQuantity'>('shippingCost');
+  const [selectedDescription, setSelectedDescription] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'shippingCost' | 'refundQuantity'>('shippingCost');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
   const formatMoney = createMoneyFormatter('USD');
 
-  // Get available marketplaces and categories
-  const { marketplaces, categories, dateRange } = useMemo(() => {
+  // Get available marketplaces, categories, descriptions, and date range
+  const { marketplaces, categories, descriptions, dateRange } = useMemo(() => {
     const mps = new Set<string>();
     const cats = new Set<string>();
+    const descs = new Set<string>();
     let minDate = '';
     let maxDate = '';
 
@@ -64,49 +63,42 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
         if (!minDate || tx.dateOnly < minDate) minDate = tx.dateOnly;
         if (!maxDate || tx.dateOnly > maxDate) maxDate = tx.dateOnly;
       }
+      // Collect descriptions from Shipping Services
+      if (tx.categoryType === 'Shipping Services' && tx.description) {
+        descs.add(tx.description);
+      }
     });
 
     return {
       marketplaces: Array.from(mps).sort(),
       categories: Array.from(cats).sort(),
+      descriptions: Array.from(descs).sort(),
       dateRange: { min: minDate, max: maxDate }
     };
   }, [transactionData]);
 
-  // Build Order ID -> Shipping Cost map from Shipping Services transactions
-  const shippingCostMap = useMemo(() => {
-    const map = new Map<string, { cost: number; marketplace: string }>();
+  // Build SKU -> Refund quantity map from Refund transactions
+  const refundQuantityMap = useMemo(() => {
+    const map = new Map<string, number>();
 
     transactionData.forEach(tx => {
-      // Shipping Services type has categoryType = 'Shipping Services'
-      if (tx.categoryType === 'Shipping Services' && tx.orderId) {
-        const marketplace = tx.marketplaceCode || 'US';
-        const sourceCurrency = getMarketplaceCurrency(marketplace);
-        // Shipping cost is typically in 'total' field (negative value)
-        const localCost = Math.abs(tx.total || 0);
-        const usdCost = convertCurrency(localCost, sourceCurrency, 'USD');
-
-        const existing = map.get(tx.orderId);
-        if (existing) {
-          existing.cost += usdCost;
-        } else {
-          map.set(tx.orderId, { cost: usdCost, marketplace });
-        }
+      if (tx.categoryType === 'Refund' && tx.sku) {
+        const qty = Math.abs(tx.quantity || 0);
+        map.set(tx.sku, (map.get(tx.sku) || 0) + qty);
       }
     });
 
     return map;
   }, [transactionData]);
 
-  // Calculate FBM shipping costs by group
+  // Calculate shipping costs from Shipping Services transactions
   const analysisData = useMemo(() => {
     const effectiveStart = startDate || dateRange.min;
     const effectiveEnd = endDate || dateRange.max;
 
-    // Filter FBM orders within date range
-    const fbmOrders = transactionData.filter(tx => {
-      if (tx.categoryType !== 'Order' || tx.fulfillment !== 'FBM') return false;
-      if (!tx.orderId) return false;
+    // Filter Shipping Services transactions
+    const shippingTransactions = transactionData.filter(tx => {
+      if (tx.categoryType !== 'Shipping Services') return false;
 
       // Date filter
       if (effectiveStart && tx.dateOnly && tx.dateOnly < effectiveStart) return false;
@@ -115,8 +107,8 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
       // Marketplace filter
       if (selectedMarketplace !== 'all' && tx.marketplaceCode !== selectedMarketplace) return false;
 
-      // Category filter
-      if (selectedCategory !== 'all' && tx.productCategory !== selectedCategory) return false;
+      // Description filter
+      if (selectedDescription !== 'all' && tx.description !== selectedDescription) return false;
 
       return true;
     });
@@ -129,15 +121,12 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
       name?: string;
       parent?: string;
       category?: string;
-      orderIds: Set<string>;
-      orderQuantity: number;
-      returnQuantity: number;
-      revenue: number;
+      skus: Set<string>;
       shippingCost: number;
       marketplace?: string;
     }>();
 
-    fbmOrders.forEach(tx => {
+    shippingTransactions.forEach(tx => {
       let key: string;
       let label: string;
 
@@ -163,6 +152,9 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
           label = tx.sku || 'Unknown';
       }
 
+      // Category filter (apply after grouping key is determined)
+      if (selectedCategory !== 'all' && tx.productCategory !== selectedCategory) return;
+
       if (!groups.has(key)) {
         groups.set(key, {
           key,
@@ -171,10 +163,7 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
           name: tx.name,
           parent: tx.parent,
           category: tx.productCategory,
-          orderIds: new Set(),
-          orderQuantity: 0,
-          returnQuantity: 0,
-          revenue: 0,
+          skus: new Set(),
           shippingCost: 0,
           marketplace: tx.marketplaceCode
         });
@@ -182,46 +171,39 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
 
       const group = groups.get(key)!;
 
-      if (tx.orderId) {
-        group.orderIds.add(tx.orderId);
-
-        // Get shipping cost for this order
-        const shippingInfo = shippingCostMap.get(tx.orderId);
-        if (shippingInfo) {
-          group.shippingCost += shippingInfo.cost;
-        }
+      // Track SKUs for refund quantity lookup
+      if (tx.sku) {
+        group.skus.add(tx.sku);
       }
 
+      // Add shipping cost (NOT absolute value - keep sign for net calculation)
       const marketplace = tx.marketplaceCode || 'US';
       const sourceCurrency = getMarketplaceCurrency(marketplace);
-      const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
-      const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
-
-      // Positive quantity = order, negative = return
-      const qty = tx.quantity || 0;
-      if (qty > 0) {
-        group.orderQuantity += qty;
-      } else {
-        group.returnQuantity += Math.abs(qty);
-      }
-      group.revenue += usdRevenue;
+      const localCost = tx.total || 0;
+      const usdCost = convertCurrency(localCost, sourceCurrency, 'USD');
+      group.shippingCost += usdCost;
     });
 
     // Convert to array with calculated metrics
-    const items: ShippingCostItem[] = Array.from(groups.values()).map(g => ({
-      key: g.key,
-      label: g.label,
-      sku: g.sku,
-      name: g.name,
-      parent: g.parent,
-      category: g.category,
-      orderQuantity: g.orderQuantity,
-      returnQuantity: g.returnQuantity,
-      revenue: g.revenue,
-      shippingCost: g.shippingCost,
-      shippingCostPercentage: g.revenue > 0 ? (g.shippingCost / g.revenue) * 100 : 0,
-      marketplace: g.marketplace
-    }));
+    const items: ShippingCostItem[] = Array.from(groups.values()).map(g => {
+      // Sum refund quantities from all SKUs in this group
+      let refundQty = 0;
+      g.skus.forEach(sku => {
+        refundQty += refundQuantityMap.get(sku) || 0;
+      });
+
+      return {
+        key: g.key,
+        label: g.label,
+        sku: g.sku,
+        name: g.name,
+        parent: g.parent,
+        category: g.category,
+        refundQuantity: refundQty,
+        shippingCost: g.shippingCost,
+        marketplace: g.marketplace
+      };
+    });
 
     // Sort
     items.sort((a, b) => {
@@ -232,35 +214,31 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
 
     // Calculate totals
     const totals = items.reduce((acc, item) => ({
-      orderQuantity: acc.orderQuantity + item.orderQuantity,
-      returnQuantity: acc.returnQuantity + item.returnQuantity,
-      revenue: acc.revenue + item.revenue,
+      refundQuantity: acc.refundQuantity + item.refundQuantity,
       shippingCost: acc.shippingCost + item.shippingCost
-    }), { orderQuantity: 0, returnQuantity: 0, revenue: 0, shippingCost: 0 });
+    }), { refundQuantity: 0, shippingCost: 0 });
 
     return { items, totals };
-  }, [transactionData, shippingCostMap, groupBy, selectedMarketplace, selectedCategory, startDate, endDate, dateRange, sortBy, sortOrder]);
+  }, [transactionData, refundQuantityMap, groupBy, selectedMarketplace, selectedCategory, selectedDescription, startDate, endDate, dateRange, sortBy, sortOrder]);
 
-  // Stats
+  // Stats for Shipping Services
   const stats = useMemo(() => {
-    const ordersWithShipping = transactionData.filter(
-      tx => tx.categoryType === 'Shipping Services' && tx.orderId
-    ).length;
-
-    const fbmOrders = transactionData.filter(
-      tx => tx.categoryType === 'Order' && tx.fulfillment === 'FBM' && tx.orderId
+    const shippingRecords = transactionData.filter(
+      tx => tx.categoryType === 'Shipping Services'
     );
 
-    const fbmOrderIds = new Set(fbmOrders.map(tx => tx.orderId));
-    const matchedOrders = Array.from(fbmOrderIds).filter(id => shippingCostMap.has(id)).length;
+    const refundRecords = transactionData.filter(
+      tx => tx.categoryType === 'Refund'
+    );
+
+    const totalRefundQty = refundRecords.reduce((sum, tx) => sum + Math.abs(tx.quantity || 0), 0);
 
     return {
-      totalShippingRecords: ordersWithShipping,
-      totalFbmOrders: fbmOrderIds.size,
-      matchedOrders,
-      matchRate: fbmOrderIds.size > 0 ? (matchedOrders / fbmOrderIds.size) * 100 : 0
+      totalShippingRecords: shippingRecords.length,
+      totalRefunds: refundRecords.length,
+      totalRefundQty
     };
-  }, [transactionData, shippingCostMap]);
+  }, [transactionData]);
 
   const handleSort = (column: typeof sortBy) => {
     if (sortBy === column) {
@@ -279,18 +257,15 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
   };
 
   const exportToCSV = () => {
-    const headers = ['Label', 'SKU', 'Name', 'Parent', 'Category', 'Order Qty', 'Return Qty', 'Revenue (USD)', 'Shipping Cost (USD)', 'Cost %'];
+    const headers = ['Label', 'SKU', 'Name', 'Parent', 'Category', 'Refund Qty', 'Shipping Cost (USD)'];
     const rows = analysisData.items.map(item => [
       item.label,
       item.sku || '',
       item.name || '',
       item.parent || '',
       item.category || '',
-      item.orderQuantity,
-      item.returnQuantity,
-      item.revenue.toFixed(2),
-      item.shippingCost.toFixed(2),
-      item.shippingCostPercentage.toFixed(1)
+      item.refundQuantity,
+      item.shippingCost.toFixed(2)
     ]);
 
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
@@ -313,7 +288,7 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-800">FBM Refund Shipping Cost</h2>
-            <p className="text-sm text-slate-500">Order ID ile Shipping Services eşleştirmesi</p>
+            <p className="text-sm text-slate-500">Shipping Services kargo maliyetleri analizi</p>
           </div>
         </div>
         <button
@@ -326,38 +301,20 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-slate-50 rounded-lg p-4">
           <div className="text-xs text-slate-500 mb-1">Shipping Kayıtları</div>
           <div className="text-xl font-bold text-slate-800">{stats.totalShippingRecords.toLocaleString()}</div>
         </div>
         <div className="bg-slate-50 rounded-lg p-4">
-          <div className="text-xs text-slate-500 mb-1">FBM Siparişleri</div>
-          <div className="text-xl font-bold text-slate-800">{stats.totalFbmOrders.toLocaleString()}</div>
+          <div className="text-xs text-slate-500 mb-1">Refund İşlemleri</div>
+          <div className="text-xl font-bold text-slate-800">{stats.totalRefunds.toLocaleString()}</div>
         </div>
         <div className="bg-slate-50 rounded-lg p-4">
-          <div className="text-xs text-slate-500 mb-1">Eşleşen</div>
-          <div className="text-xl font-bold text-green-600">{stats.matchedOrders.toLocaleString()}</div>
-        </div>
-        <div className="bg-slate-50 rounded-lg p-4">
-          <div className="text-xs text-slate-500 mb-1">Eşleşme Oranı</div>
-          <div className="text-xl font-bold text-blue-600">{formatPercent(stats.matchRate)}</div>
+          <div className="text-xs text-slate-500 mb-1">Toplam Refund Adedi</div>
+          <div className="text-xl font-bold text-red-600">{stats.totalRefundQty.toLocaleString()}</div>
         </div>
       </div>
-
-      {/* Match Rate Warning */}
-      {stats.matchRate < 50 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <div className="text-sm font-medium text-amber-800">Düşük Eşleşme Oranı</div>
-            <div className="text-xs text-amber-700">
-              FBM siparişlerinin sadece {formatPercent(stats.matchRate)}'i Shipping Services kayıtlarıyla eşleşti.
-              Bu durum, eksik veri veya farklı dosyalardan yükleme yapılmasından kaynaklanabilir.
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4 mb-6 pb-4 border-b border-slate-200">
@@ -373,6 +330,20 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
             <option value="product">Ürün (Name)</option>
             <option value="parent">Parent ASIN</option>
             <option value="category">Kategori</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-600">Tip:</span>
+          <select
+            value={selectedDescription}
+            onChange={(e) => setSelectedDescription(e.target.value)}
+            className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+          >
+            <option value="all">Tümü</option>
+            {descriptions.map(desc => (
+              <option key={desc} value={desc}>{desc}</option>
+            ))}
           </select>
         </div>
 
@@ -427,22 +398,17 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-          <div className="text-xs text-orange-600 mb-1">Toplam Kargo Maliyeti</div>
-          <div className="text-xl font-bold text-orange-700">{formatMoney(analysisData.totals.shippingCost)}</div>
-        </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="text-xs text-blue-600 mb-1">Toplam Gelir</div>
-          <div className="text-xl font-bold text-blue-700">{formatMoney(analysisData.totals.revenue)}</div>
-        </div>
-        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-          <div className="text-xs text-purple-600 mb-1">Kargo Oranı</div>
-          <div className="text-xl font-bold text-purple-700">
-            {formatPercent(analysisData.totals.revenue > 0
-              ? (analysisData.totals.shippingCost / analysisData.totals.revenue) * 100
-              : 0)}
+          <div className="text-xs text-orange-600 mb-1">Toplam Kargo Maliyeti (Net)</div>
+          <div className="text-xl font-bold text-orange-700">{formatMoney(Math.abs(analysisData.totals.shippingCost))}</div>
+          <div className="text-xs text-slate-500 mt-1">
+            {analysisData.totals.shippingCost < 0 ? 'Gider' : 'Geri ödeme'}
           </div>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="text-xs text-red-600 mb-1">Toplam Refund Adedi</div>
+          <div className="text-xl font-bold text-red-700">{analysisData.totals.refundQuantity.toLocaleString()}</div>
         </div>
       </div>
 
@@ -458,33 +424,22 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
               </th>
               <th
                 className="text-right py-3 px-4 font-medium text-slate-600 cursor-pointer hover:text-slate-800"
-                onClick={() => handleSort('orderQuantity')}
+                onClick={() => handleSort('refundQuantity')}
               >
                 <div className="flex items-center justify-end gap-1">
-                  Sipariş Adedi
-                  <SortIcon column="orderQuantity" />
+                  Refund Adedi
+                  <SortIcon column="refundQuantity" />
                 </div>
               </th>
-              <th
-                className="text-right py-3 px-4 font-medium text-slate-600 cursor-pointer hover:text-slate-800"
-                onClick={() => handleSort('returnQuantity')}
-              >
-                <div className="flex items-center justify-end gap-1">
-                  Return Adedi
-                  <SortIcon column="returnQuantity" />
-                </div>
-              </th>
-              <th className="text-right py-3 px-4 font-medium text-slate-600">Gelir</th>
               <th
                 className="text-right py-3 px-4 font-medium text-slate-600 cursor-pointer hover:text-slate-800"
                 onClick={() => handleSort('shippingCost')}
               >
                 <div className="flex items-center justify-end gap-1">
-                  Kargo
+                  Kargo Maliyeti
                   <SortIcon column="shippingCost" />
                 </div>
               </th>
-              <th className="text-right py-3 px-4 font-medium text-slate-600">%</th>
             </tr>
           </thead>
           <tbody>
@@ -498,16 +453,8 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
                     <div className="text-xs text-slate-500 text-left">{item.category}</div>
                   )}
                 </td>
-                <td className="text-right py-3 px-4 text-slate-700">{item.orderQuantity.toLocaleString()}</td>
-                <td className="text-right py-3 px-4 text-red-600 font-medium">{item.returnQuantity.toLocaleString()}</td>
-                <td className="text-right py-3 px-4 text-slate-700">{formatMoney(item.revenue)}</td>
+                <td className="text-right py-3 px-4 text-red-600 font-medium">{item.refundQuantity.toLocaleString()}</td>
                 <td className="text-right py-3 px-4 font-medium text-orange-600">{formatMoney(item.shippingCost)}</td>
-                <td className={`text-right py-3 px-4 font-medium ${
-                  item.shippingCostPercentage > 20 ? 'text-red-600' :
-                  item.shippingCostPercentage > 10 ? 'text-amber-600' : 'text-green-600'
-                }`}>
-                  {formatPercent(item.shippingCostPercentage)}
-                </td>
               </tr>
             ))}
           </tbody>
@@ -522,7 +469,7 @@ const FbmShippingAnalyzer: React.FC<FbmShippingAnalyzerProps> = ({ transactionDa
         {analysisData.items.length === 0 && (
           <div className="text-center py-12 text-slate-500">
             <Truck className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>Filtrelere uygun FBM sipariş bulunamadı</p>
+            <p>Filtrelere uygun Shipping Services kaydı bulunamadı</p>
           </div>
         )}
       </div>
