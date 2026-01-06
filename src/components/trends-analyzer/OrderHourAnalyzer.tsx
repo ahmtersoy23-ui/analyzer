@@ -86,14 +86,14 @@ const AMAZON_REPORT_OFFSETS: Record<string, number> = {
  * Local timezone offsets for each marketplace (hours from UTC)
  */
 const LOCAL_TIMEZONE_OFFSETS: Record<string, number> = {
-  US: -5,   // EST (most populous timezone)
+  US: -8,   // PST (Pacific Standard Time)
   CA: -5,   // EST (Toronto/Montreal area)
   UK: 0,    // GMT
   DE: 1,    // CET
   FR: 1,    // CET
   IT: 1,    // CET
   ES: 1,    // CET
-  AU: 9,    // GMT+9 (Australian Eastern Standard Time without DST)
+  AU: 9,    // GMT+9
   AE: 4,    // UTC+4 (Gulf Standard Time)
   SA: 3,    // UTC+3 (Arabia Standard Time)
   SG: 8,    // SGT
