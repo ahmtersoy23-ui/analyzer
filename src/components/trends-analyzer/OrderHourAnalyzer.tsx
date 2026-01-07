@@ -399,8 +399,8 @@ const OrderHourAnalyzer: React.FC<OrderHourAnalyzerProps> = ({ transactionData }
           <Clock className="w-6 h-6 text-white" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Sipariş Saati Analizi</h2>
-          <p className="text-sm text-slate-500">Saat bazlı sipariş dağılımı</p>
+          <h2 className="text-xl font-bold text-slate-800">Order Hour Analysis</h2>
+          <p className="text-sm text-slate-500">Order distribution by hour</p>
         </div>
       </div>
 

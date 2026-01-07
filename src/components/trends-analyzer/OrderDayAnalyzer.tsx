@@ -360,7 +360,7 @@ const OrderDayAnalyzer: React.FC<OrderDayAnalyzerProps> = ({ transactionData }) 
               <Calendar className="w-5 h-5 text-purple-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-800">Ayın Günlerine Göre Sipariş Analizi</h2>
+              <h2 className="text-lg font-semibold text-slate-800">Order Analysis by Day of Month</h2>
               <p className="text-sm text-slate-500">
                 {filteredOrders.length.toLocaleString()} sipariş analiz edildi
                 {(startDate || endDate) && (
@@ -520,7 +520,7 @@ const OrderDayAnalyzer: React.FC<OrderDayAnalyzerProps> = ({ transactionData }) 
       {/* Main Chart */}
       <div className="bg-white rounded-xl shadow-sm p-6">
         <h3 className="text-sm font-medium text-slate-700 mb-4">
-          {viewMode === 'overview' && 'Ayın Günlerine Göre Dağılım'}
+          {viewMode === 'overview' && 'Distribution by Day of Month'}
           {viewMode === 'byCountry' && 'Ülkelere Göre Günlük Dağılım'}
           {viewMode === 'byCategory' && 'Kategorilere Göre Günlük Dağılım'}
           {viewMode === 'byFulfillment' && 'FBA/FBM Günlük Dağılım'}

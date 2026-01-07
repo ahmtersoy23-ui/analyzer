@@ -185,6 +185,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
   const [timeAggregation, setTimeAggregation] = useState<TimeAggregation>('daily');
   const [chartMode, setChartMode] = useState<ChartMode>('bar');
   const [topMoversGroupBy, setTopMoversGroupBy] = useState<'product' | 'parent'>('product');
+  const [topMoversLimit, setTopMoversLimit] = useState<number>(20);
 
   // Chart grouping - auto-determined or user override
   const [groupByOverride, setGroupByOverride] = useState<GroupByType | null>(null);
@@ -686,7 +687,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
   // Top Movers calculation - by product or parent
   const topMovers = useMemo(() => {
     if (!period1Start || !period1End || !period2Start || !period2End) {
-      return { gainers: [], losers: [] };
+      return { gainers: [] as TopMoverItem[], losers: [] as TopMoverItem[], totalGainers: 0, totalLosers: 0 };
     }
 
     const period1Map = new Map<string, { quantity: number; revenue: number }>();
@@ -748,13 +749,16 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
       }
     });
 
-    // Sort and get top 20
+    // Sort and get top N (based on limit)
     const sorted = [...movers].sort((a, b) => b.change - a.change);
-    const gainers = sorted.filter(m => m.change > 0).slice(0, 20);
-    const losers = sorted.filter(m => m.change < 0).sort((a, b) => a.change - b.change).slice(0, 20);
+    const allGainers = sorted.filter(m => m.change > 0);
+    const allLosers = sorted.filter(m => m.change < 0).sort((a, b) => a.change - b.change);
 
-    return { gainers, losers };
-  }, [baseFilteredOrders, period1Start, period1End, period2Start, period2End, topMoversGroupBy]);
+    const gainers = allGainers.slice(0, topMoversLimit);
+    const losers = allLosers.slice(0, topMoversLimit);
+
+    return { gainers, losers, totalGainers: allGainers.length, totalLosers: allLosers.length };
+  }, [baseFilteredOrders, period1Start, period1End, period2Start, period2End, topMoversGroupBy, topMoversLimit]);
 
   // PDF Export function
   const handleExportPDF = async () => {
@@ -1545,31 +1549,58 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
         <div className="space-y-4">
           {/* Toggle Header */}
           <div className="bg-white rounded-xl shadow-sm p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-slate-700">Top 20 Movers (Quantity)</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">Group by:</span>
-                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                  <button
-                    onClick={() => setTopMoversGroupBy('product')}
-                    className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                      topMoversGroupBy === 'product'
-                        ? 'bg-white text-indigo-700 shadow-sm font-medium'
-                        : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    Product
-                  </button>
-                  <button
-                    onClick={() => setTopMoversGroupBy('parent')}
-                    className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                      topMoversGroupBy === 'parent'
-                        ? 'bg-white text-indigo-700 shadow-sm font-medium'
-                        : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    Parent
-                  </button>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <h3 className="text-sm font-medium text-slate-700">
+                Top Movers (Quantity)
+                <span className="text-xs text-slate-400 ml-2">
+                  {topMovers.totalGainers} gainers, {topMovers.totalLosers} losers
+                </span>
+              </h3>
+              <div className="flex items-center gap-4">
+                {/* Limit Toggle */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Show:</span>
+                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                    {[10, 20, 50, 100, 500].map(limit => (
+                      <button
+                        key={limit}
+                        onClick={() => setTopMoversLimit(limit)}
+                        className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                          topMoversLimit === limit
+                            ? 'bg-white text-indigo-700 shadow-sm font-medium'
+                            : 'text-slate-600 hover:text-slate-800'
+                        }`}
+                      >
+                        {limit}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Group By Toggle */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Group by:</span>
+                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                    <button
+                      onClick={() => setTopMoversGroupBy('product')}
+                      className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                        topMoversGroupBy === 'product'
+                          ? 'bg-white text-indigo-700 shadow-sm font-medium'
+                          : 'text-slate-600 hover:text-slate-800'
+                      }`}
+                    >
+                      Product
+                    </button>
+                    <button
+                      onClick={() => setTopMoversGroupBy('parent')}
+                      className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                        topMoversGroupBy === 'parent'
+                          ? 'bg-white text-indigo-700 shadow-sm font-medium'
+                          : 'text-slate-600 hover:text-slate-800'
+                      }`}
+                    >
+                      Parent
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1579,7 +1610,12 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
           <div className="bg-white rounded-xl shadow-sm p-4">
             <h3 className="text-sm font-medium text-green-700 mb-3 flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
-              Top 20 Gainers
+              Top {topMovers.gainers.length} Gainers
+              {topMovers.totalGainers > topMovers.gainers.length && (
+                <span className="text-xs text-slate-400 font-normal">
+                  (of {topMovers.totalGainers})
+                </span>
+              )}
             </h3>
             <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
               <table className="w-full text-sm">
@@ -1588,7 +1624,8 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
                     <th className="text-left py-2 px-3 font-medium text-slate-600">{topMoversGroupBy === 'parent' ? 'Parent' : 'Product'}</th>
                     <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">P1</th>
                     <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">P2</th>
-                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">Change</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">Qty</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">%</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1600,7 +1637,10 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
                       <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">{item.period1Value.toLocaleString()}</td>
                       <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">{item.period2Value.toLocaleString()}</td>
                       <td className="py-2 px-3 text-right text-green-600 font-medium whitespace-nowrap">
-                        +{item.change.toLocaleString()} ({item.changePercent > 999 ? '>999' : item.changePercent.toFixed(0)}%)
+                        +{item.change.toLocaleString()}
+                      </td>
+                      <td className="py-2 px-3 text-right text-green-600 font-medium whitespace-nowrap">
+                        {item.changePercent > 999 ? '>999' : item.changePercent.toFixed(0)}%
                       </td>
                     </tr>
                   ))}
@@ -1616,7 +1656,12 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
           <div className="bg-white rounded-xl shadow-sm p-4">
             <h3 className="text-sm font-medium text-red-700 mb-3 flex items-center gap-2">
               <TrendingDown className="w-4 h-4" />
-              Top 20 Losers
+              Top {topMovers.losers.length} Losers
+              {topMovers.totalLosers > topMovers.losers.length && (
+                <span className="text-xs text-slate-400 font-normal">
+                  (of {topMovers.totalLosers})
+                </span>
+              )}
             </h3>
             <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
               <table className="w-full text-sm">
@@ -1625,7 +1670,8 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
                     <th className="text-left py-2 px-3 font-medium text-slate-600">{topMoversGroupBy === 'parent' ? 'Parent' : 'Product'}</th>
                     <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">P1</th>
                     <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">P2</th>
-                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">Change</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">Qty</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">%</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1637,7 +1683,10 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
                       <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">{item.period1Value.toLocaleString()}</td>
                       <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">{item.period2Value.toLocaleString()}</td>
                       <td className="py-2 px-3 text-right text-red-600 font-medium whitespace-nowrap">
-                        {item.change.toLocaleString()} ({item.changePercent < -999 ? '<-999' : item.changePercent.toFixed(0)}%)
+                        {item.change.toLocaleString()}
+                      </td>
+                      <td className="py-2 px-3 text-right text-red-600 font-medium whitespace-nowrap">
+                        {item.changePercent < -999 ? '<-999' : item.changePercent.toFixed(0)}%
                       </td>
                     </tr>
                   ))}

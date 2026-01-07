@@ -597,7 +597,7 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
             }`}
           >
             <TrendingUp className="w-4 h-4" />
-            Trend Analizi
+            Trends Analyzer
           </button>
           <button
             onClick={() => setActiveTab('fbm-shipping')}
@@ -608,7 +608,7 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
             }`}
           >
             <Truck className="w-4 h-4" />
-            FBM Kargo Analizi
+            FBM Shipping
           </button>
           <button
             onClick={() => setActiveTab('order-hours')}
@@ -619,7 +619,7 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
             }`}
           >
             <Clock className="w-4 h-4" />
-            Sipariş Saati Analizi
+            Order Hours
           </button>
           <button
             onClick={() => setActiveTab('order-days')}
@@ -630,7 +630,7 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
             }`}
           >
             <Calendar className="w-4 h-4" />
-            Ayın Günleri Analizi
+            Order Days
           </button>
           <button
             onClick={() => setActiveTab('period-comparison')}
@@ -641,7 +641,7 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
             }`}
           >
             <GitCompare className="w-4 h-4" />
-            Periyot Kıyası
+            Period Comparison
           </button>
         </div>
 

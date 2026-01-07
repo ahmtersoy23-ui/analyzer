@@ -111,7 +111,7 @@ function AppContent() {
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
-                  Trends
+                  Trends Analyzer
                 </button>
               )}
             </div>
