@@ -587,24 +587,27 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     return DYNAMIC_COLORS[index % DYNAMIC_COLORS.length];
   };
 
-  // Calculate comparison metrics
+  // Calculate comparison metrics (Period 1 compared to Period 2)
   const comparison = useMemo(() => {
     if (period1Summary.days === 0 || period2Summary.days === 0) return null;
 
-    const ordersChange = period1Summary.avgDailyOrders > 0
-      ? ((period2Summary.avgDailyOrders - period1Summary.avgDailyOrders) / period1Summary.avgDailyOrders) * 100
+    // Calculate avg daily quantity for comparison
+    const period1AvgDailyQuantity = period1Summary.days > 0 ? period1Summary.totalQuantity / period1Summary.days : 0;
+    const period2AvgDailyQuantity = period2Summary.days > 0 ? period2Summary.totalQuantity / period2Summary.days : 0;
+
+    // Period 1 change relative to Period 2 (P1 vs P2)
+    const quantityChange = period2AvgDailyQuantity > 0
+      ? ((period1AvgDailyQuantity - period2AvgDailyQuantity) / period2AvgDailyQuantity) * 100
       : 0;
-    const revenueChange = period1Summary.avgDailyRevenue > 0
-      ? ((period2Summary.avgDailyRevenue - period1Summary.avgDailyRevenue) / period1Summary.avgDailyRevenue) * 100
+    const revenueChange = period2Summary.avgDailyRevenue > 0
+      ? ((period1Summary.avgDailyRevenue - period2Summary.avgDailyRevenue) / period2Summary.avgDailyRevenue) * 100
       : 0;
 
-    // Absolute differences
-    const ordersDiff = period2Summary.totalOrders - period1Summary.totalOrders;
-    const revenueDiff = period2Summary.totalRevenue - period1Summary.totalRevenue;
-    const avgOrdersDiff = period2Summary.avgDailyOrders - period1Summary.avgDailyOrders;
-    const avgRevenueDiff = period2Summary.avgDailyRevenue - period1Summary.avgDailyRevenue;
+    // Absolute differences (Period 1 - Period 2)
+    const quantityDiff = period1Summary.totalQuantity - period2Summary.totalQuantity;
+    const revenueDiff = period1Summary.totalRevenue - period2Summary.totalRevenue;
 
-    return { ordersChange, revenueChange, ordersDiff, revenueDiff, avgOrdersDiff, avgRevenueDiff };
+    return { quantityChange, revenueChange, quantityDiff, revenueDiff };
   }, [period1Summary, period2Summary]);
 
   // Calculate shared Y-axis max for synchronized scales
@@ -994,44 +997,44 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
       {/* Comparison Summary */}
       {comparison && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl shadow-sm p-4">
+          <div className="bg-white rounded-xl shadow-sm p-4 text-center">
             <div className="text-sm text-slate-500 mb-1">Period 1 Total</div>
             <div className="text-xl font-bold text-slate-800">
-              {period1Summary.totalOrders.toLocaleString()} orders
+              {period1Summary.totalQuantity.toLocaleString()} qty
             </div>
             <div className="text-sm text-slate-500">{formatMoney(period1Summary.totalRevenue)}</div>
             <div className="text-xs text-slate-400 mt-1">
-              ({period1Summary.days} days, avg {Math.round(period1Summary.avgDailyOrders)}/day)
+              ({period1Summary.days} days, {period1Summary.totalOrders.toLocaleString()} orders)
             </div>
           </div>
-          <div className="bg-white rounded-xl shadow-sm p-4">
+          <div className="bg-white rounded-xl shadow-sm p-4 text-center">
             <div className="text-sm text-slate-500 mb-1">Period 2 Total</div>
             <div className="text-xl font-bold text-slate-800">
-              {period2Summary.totalOrders.toLocaleString()} orders
+              {period2Summary.totalQuantity.toLocaleString()} qty
             </div>
             <div className="text-sm text-slate-500">{formatMoney(period2Summary.totalRevenue)}</div>
             <div className="text-xs text-slate-400 mt-1">
-              ({period2Summary.days} days, avg {Math.round(period2Summary.avgDailyOrders)}/day)
+              ({period2Summary.days} days, {period2Summary.totalOrders.toLocaleString()} orders)
             </div>
           </div>
-          <div className="bg-white rounded-xl shadow-sm p-4">
-            <div className="text-sm text-slate-500 mb-1">Orders Change</div>
-            <div className="flex items-center gap-2">
-              {renderChangeIcon(comparison.ordersChange)}
+          <div className="bg-white rounded-xl shadow-sm p-4 text-center">
+            <div className="text-sm text-slate-500 mb-1">Quantity Change</div>
+            <div className="flex items-center justify-center gap-2">
+              {renderChangeIcon(comparison.quantityChange)}
               <span className={`text-xl font-bold ${
-                comparison.ordersChange > 5 ? 'text-green-600' :
-                comparison.ordersChange < -5 ? 'text-red-600' : 'text-slate-600'
+                comparison.quantityChange > 5 ? 'text-green-600' :
+                comparison.quantityChange < -5 ? 'text-red-600' : 'text-slate-600'
               }`}>
-                {comparison.ordersChange > 0 ? '+' : ''}{comparison.ordersChange.toFixed(1)}%
+                {comparison.quantityChange > 0 ? '+' : ''}{comparison.quantityChange.toFixed(1)}%
               </span>
             </div>
-            <div className={`text-sm mt-1 ${comparison.ordersDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {comparison.ordersDiff >= 0 ? '+' : ''}{comparison.ordersDiff.toLocaleString()} orders
+            <div className={`text-sm mt-1 ${comparison.quantityDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {comparison.quantityDiff >= 0 ? '+' : ''}{comparison.quantityDiff.toLocaleString()} qty
             </div>
           </div>
-          <div className="bg-white rounded-xl shadow-sm p-4">
+          <div className="bg-white rounded-xl shadow-sm p-4 text-center">
             <div className="text-sm text-slate-500 mb-1">Revenue Change</div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-2">
               {renderChangeIcon(comparison.revenueChange)}
               <span className={`text-xl font-bold ${
                 comparison.revenueChange > 5 ? 'text-green-600' :
