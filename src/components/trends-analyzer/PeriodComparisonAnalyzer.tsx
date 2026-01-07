@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Calendar, Filter, CalendarDays, TrendingUp, TrendingDown, Minus, FileDown, Rewind, History, BarChart3, LineChart as LineChartIcon } from 'lucide-react';
+import { Calendar, Filter, CalendarDays, TrendingUp, TrendingDown, Minus, FileDown, Rewind, History, BarChart3, LineChart as LineChartIcon, DollarSign } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -46,6 +46,14 @@ interface TopMoverItem {
   period2Value: number;
   change: number;
   changePercent: number;
+}
+
+interface TopRevenueItem {
+  key: string;
+  label: string;
+  revenue: number;
+  quantity: number;
+  revenuePercent: number; // % of total revenue
 }
 
 interface LineOverlayData {
@@ -759,6 +767,57 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
 
     return { gainers, losers, totalGainers: allGainers.length, totalLosers: allLosers.length };
   }, [baseFilteredOrders, period1Start, period1End, period2Start, period2End, topMoversGroupBy, topMoversLimit]);
+
+  // Top Revenue calculation - Period 1 only
+  const topRevenue = useMemo(() => {
+    if (!period1Start || !period1End) {
+      return { items: [] as TopRevenueItem[], totalRevenue: 0, totalCount: 0 };
+    }
+
+    const revenueMap = new Map<string, { revenue: number; quantity: number }>();
+
+    baseFilteredOrders.forEach(tx => {
+      const txDate = tx.dateOnly || (tx.date instanceof Date ? tx.date.toISOString().split('T')[0] : new Date(tx.date).toISOString().split('T')[0]);
+      if (txDate < period1Start || txDate > period1End) return;
+
+      const key = topMoversGroupBy === 'parent'
+        ? (tx.parent || 'Unknown')
+        : (tx.name || tx.sku || 'Unknown');
+
+      const country = tx.marketplaceCode || 'US';
+      const sourceCurrency = getMarketplaceCurrency(country);
+      const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
+      const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
+      const quantity = Math.abs(tx.quantity || 0);
+
+      const existing = revenueMap.get(key) || { revenue: 0, quantity: 0 };
+      revenueMap.set(key, {
+        revenue: existing.revenue + usdRevenue,
+        quantity: existing.quantity + quantity,
+      });
+    });
+
+    // Calculate total revenue
+    let totalRevenue = 0;
+    revenueMap.forEach(v => { totalRevenue += v.revenue; });
+
+    // Build items with percentage
+    const items: TopRevenueItem[] = [];
+    revenueMap.forEach((v, key) => {
+      items.push({
+        key,
+        label: key,
+        revenue: v.revenue,
+        quantity: v.quantity,
+        revenuePercent: totalRevenue > 0 ? (v.revenue / totalRevenue) * 100 : 0,
+      });
+    });
+
+    // Sort by revenue descending
+    items.sort((a, b) => b.revenue - a.revenue);
+
+    return { items: items.slice(0, topMoversLimit), totalRevenue, totalCount: items.length };
+  }, [baseFilteredOrders, period1Start, period1End, topMoversGroupBy, topMoversLimit]);
 
   // PDF Export function
   const handleExportPDF = async () => {
@@ -1699,6 +1758,58 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
           </div>
         </div>
       )}
+
+      {/* Top Revenue - Period 1 Only */}
+      {topRevenue.items.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-md font-semibold text-slate-700 mb-3 flex items-center gap-2">
+            <DollarSign className="w-5 h-5 text-blue-600" />
+            Top Revenue (Period 1)
+            <span className="text-xs text-slate-400 font-normal ml-2">
+              Total: ${topRevenue.totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </span>
+          </h3>
+          <div className="bg-white rounded-xl shadow-sm p-4">
+            <h4 className="text-sm font-medium text-blue-700 mb-3 flex items-center gap-2">
+              Top {topRevenue.items.length} Revenue
+              {topRevenue.totalCount > topRevenue.items.length && (
+                <span className="text-xs text-slate-400 font-normal">
+                  (of {topRevenue.totalCount})
+                </span>
+              )}
+            </h4>
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-2 px-3 font-medium text-slate-600">{topMoversGroupBy === 'parent' ? 'Parent' : 'Product'}</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">Revenue</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">% of Total</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">Quantity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topRevenue.items.map((item) => (
+                    <tr key={item.key} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="py-2 px-3 text-left text-slate-700">{item.label}</td>
+                      <td className="py-2 px-3 text-right text-blue-600 font-medium whitespace-nowrap">
+                        ${item.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </td>
+                      <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">
+                        {item.revenuePercent.toFixed(1)}%
+                      </td>
+                      <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">
+                        {item.quantity.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>{/* PDF CONTENT END */}
     </div>
   );
