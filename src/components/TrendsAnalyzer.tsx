@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { TrendingUp, BarChart3, Calendar, DollarSign, RefreshCw, Globe, Package, Layers, Eye, EyeOff, Percent, Truck, Clock } from 'lucide-react';
+import { TrendingUp, BarChart3, Calendar, DollarSign, RefreshCw, Globe, Package, Layers, Eye, EyeOff, Percent, Truck, Clock, GitCompare } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -28,6 +28,7 @@ import {
   FbmShippingAnalyzer,
   OrderHourAnalyzer,
   OrderDayAnalyzer,
+  PeriodComparisonAnalyzer,
   type QueryParams,
   type QueryResults,
 } from './trends-analyzer';
@@ -181,7 +182,7 @@ const createEmptyAggregatedData = (): AggregatedData => ({
 // MAIN COMPONENT
 // ============================================
 
-type AnalyzerTab = 'trends' | 'fbm-shipping' | 'order-hours' | 'order-days';
+type AnalyzerTab = 'trends' | 'fbm-shipping' | 'order-hours' | 'order-days' | 'period-comparison';
 
 const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
   // ============================================
@@ -631,6 +632,17 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
             <Calendar className="w-4 h-4" />
             Ayın Günleri Analizi
           </button>
+          <button
+            onClick={() => setActiveTab('period-comparison')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'period-comparison'
+                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <GitCompare className="w-4 h-4" />
+            Periyot Kıyası
+          </button>
         </div>
 
         {/* FBM Shipping Analyzer Tab */}
@@ -646,6 +658,11 @@ const TrendsAnalyzer: React.FC<TrendsAnalyzerProps> = ({ transactionData }) => {
         {/* Order Day Analyzer Tab */}
         {activeTab === 'order-days' && (
           <OrderDayAnalyzer transactionData={transactionData} />
+        )}
+
+        {/* Period Comparison Analyzer Tab */}
+        {activeTab === 'period-comparison' && (
+          <PeriodComparisonAnalyzer transactionData={transactionData} />
         )}
 
         {/* Trends Analyzer Tab (Original Content) */}

@@ -70,16 +70,24 @@ const CATEGORY_COLORS = [
 /**
  * Amazon report timezone offsets (hours from UTC)
  * - North America: Reports in PST (UTC-8)
- * - Europe: Reports in UTC
- * - Others: Reports in UTC
+ * - Europe: Reports in local marketplace time
+ * - Middle East/Others: Reports in local marketplace time
  */
 const AMAZON_REPORT_OFFSETS: Record<string, number> = {
   US: -8,  // PST
-  CA: -8,  // PST
-  // Europe - UTC (offset 0)
-  UK: 0, DE: 0, FR: 0, IT: 0, ES: 0,
-  // Others - assuming UTC
-  AU: 0, AE: 0, SA: 0, SG: 0, TR: 0,
+  CA: -8,  // PST (North America reports in PST)
+  // Europe - reports in local time
+  UK: 0,   // GMT
+  DE: 1,   // CET
+  FR: 1,   // CET
+  IT: 1,   // CET
+  ES: 1,   // CET
+  // Middle East & Others - reports in local time
+  AE: 4,   // GST (Gulf Standard Time)
+  SA: 3,   // AST (Arabia Standard Time)
+  AU: 10,  // AEST (Australian Eastern Standard Time)
+  SG: 8,   // SGT
+  TR: 3,   // TRT
 };
 
 /**
@@ -93,7 +101,7 @@ const LOCAL_TIMEZONE_OFFSETS: Record<string, number> = {
   FR: 1,    // CET
   IT: 1,    // CET
   ES: 1,    // CET
-  AU: 9,    // GMT+9
+  AU: 10,   // AEST
   AE: 4,    // UTC+4 (Gulf Standard Time)
   SA: 3,    // UTC+3 (Arabia Standard Time)
   SG: 8,    // SGT
