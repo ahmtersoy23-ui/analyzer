@@ -1762,22 +1762,19 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
       {/* Top Revenue - Period 1 Only */}
       {topRevenue.items.length > 0 && (
         <div className="mt-6">
-          <h3 className="text-md font-semibold text-slate-700 mb-3 flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-blue-600" />
-            Top Revenue (Period 1)
-            <span className="text-xs text-slate-400 font-normal ml-2">
-              Total: ${topRevenue.totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </span>
-          </h3>
           <div className="bg-white rounded-xl shadow-sm p-4">
-            <h4 className="text-sm font-medium text-blue-700 mb-3 flex items-center gap-2">
-              Top {topRevenue.items.length} Revenue
+            <h3 className="text-sm font-medium text-blue-700 mb-3 flex items-center gap-2">
+              <DollarSign className="w-4 h-4" />
+              Top {topRevenue.items.length} Revenue (Period 1)
               {topRevenue.totalCount > topRevenue.items.length && (
                 <span className="text-xs text-slate-400 font-normal">
                   (of {topRevenue.totalCount})
                 </span>
               )}
-            </h4>
+              <span className="text-xs text-blue-500 font-normal ml-2">
+                = {topRevenue.totalRevenue > 0 ? ((topRevenue.items.reduce((sum, i) => sum + i.revenue, 0) / topRevenue.totalRevenue) * 100).toFixed(1) : 0}% of total (${topRevenue.totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })})
+              </span>
+            </h3>
             <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-white">
