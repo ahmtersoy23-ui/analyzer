@@ -5,14 +5,17 @@
  */
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Calendar, Filter, CalendarDays, TrendingUp, TrendingDown, Minus, FileDown, Rewind, History } from 'lucide-react';
+import { Calendar, Filter, CalendarDays, TrendingUp, TrendingDown, Minus, FileDown, Rewind, History, BarChart3, LineChart as LineChartIcon } from 'lucide-react';
 import {
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from 'recharts';
 import html2canvas from 'html2canvas';
@@ -34,6 +37,23 @@ interface DailyData {
 
 type MetricType = 'orders' | 'quantity' | 'revenue';
 type TimeAggregation = 'daily' | 'weekly' | 'monthly';
+type ChartMode = 'bar' | 'line';
+
+interface TopMoverItem {
+  key: string;
+  label: string;
+  period1Value: number;
+  period2Value: number;
+  change: number;
+  changePercent: number;
+}
+
+interface LineOverlayData {
+  dayIndex: number;
+  dayLabel: string;
+  period1: number;
+  period2: number;
+}
 
 interface PeriodComparisonAnalyzerProps {
   transactionData: TransactionData[];
@@ -162,6 +182,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
   const [selectedFulfillment, setSelectedFulfillment] = useState<string>('all');
   const [metric, setMetric] = useState<MetricType>('orders');
   const [timeAggregation, setTimeAggregation] = useState<TimeAggregation>('daily');
+  const [chartMode, setChartMode] = useState<ChartMode>('bar');
 
   // Chart grouping - auto-determined or user override
   const [groupByOverride, setGroupByOverride] = useState<GroupByType | null>(null);
@@ -629,6 +650,102 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     return Math.ceil(maxValue / magnitude) * magnitude;
   }, [period1Data, period2Data, activeGroups]);
 
+  // Line overlay data - Day 1, Day 2... format with both periods
+  const lineOverlayData = useMemo((): LineOverlayData[] => {
+    if (period1Data.length === 0 && period2Data.length === 0) return [];
+
+    const maxDays = Math.max(period1Data.length, period2Data.length);
+    const data: LineOverlayData[] = [];
+
+    for (let i = 0; i < maxDays; i++) {
+      const p1Day = period1Data[i];
+      const p2Day = period2Data[i];
+
+      // Sum all groups for total
+      const p1Total = p1Day ? activeGroups.reduce((sum, g) => sum + ((p1Day[g] as number) || 0), 0) : 0;
+      const p2Total = p2Day ? activeGroups.reduce((sum, g) => sum + ((p2Day[g] as number) || 0), 0) : 0;
+
+      data.push({
+        dayIndex: i + 1,
+        dayLabel: `Day ${i + 1}`,
+        period1: p1Total,
+        period2: p2Total,
+      });
+    }
+
+    return data;
+  }, [period1Data, period2Data, activeGroups]);
+
+  // Top Movers calculation - by product/parent/category
+  const topMovers = useMemo(() => {
+    if (!period1Start || !period1End || !period2Start || !period2End) {
+      return { gainers: [], losers: [] };
+    }
+
+    // Group by product name (most granular useful level)
+    const period1Map = new Map<string, { quantity: number; revenue: number }>();
+    const period2Map = new Map<string, { quantity: number; revenue: number }>();
+
+    baseFilteredOrders.forEach(tx => {
+      const txDate = tx.dateOnly || (tx.date instanceof Date ? tx.date.toISOString().split('T')[0] : new Date(tx.date).toISOString().split('T')[0]);
+      const key = tx.name || tx.sku || 'Unknown';
+
+      const country = tx.marketplaceCode || 'US';
+      const sourceCurrency = getMarketplaceCurrency(country);
+      const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
+      const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
+      const quantity = Math.abs(tx.quantity || 0);
+
+      if (txDate >= period1Start && txDate <= period1End) {
+        const existing = period1Map.get(key) || { quantity: 0, revenue: 0 };
+        period1Map.set(key, {
+          quantity: existing.quantity + quantity,
+          revenue: existing.revenue + usdRevenue,
+        });
+      }
+
+      if (txDate >= period2Start && txDate <= period2End) {
+        const existing = period2Map.get(key) || { quantity: 0, revenue: 0 };
+        period2Map.set(key, {
+          quantity: existing.quantity + quantity,
+          revenue: existing.revenue + usdRevenue,
+        });
+      }
+    });
+
+    // Calculate changes for all products
+    const allProducts = new Set([...Array.from(period1Map.keys()), ...Array.from(period2Map.keys())]);
+    const movers: TopMoverItem[] = [];
+
+    allProducts.forEach(key => {
+      const p1 = period1Map.get(key) || { quantity: 0, revenue: 0 };
+      const p2 = period2Map.get(key) || { quantity: 0, revenue: 0 };
+
+      // Use quantity for comparison (as requested)
+      const change = p1.quantity - p2.quantity;
+      const changePercent = p2.quantity > 0 ? (change / p2.quantity) * 100 : (p1.quantity > 0 ? 100 : 0);
+
+      // Only include if there's meaningful data
+      if (p1.quantity > 0 || p2.quantity > 0) {
+        movers.push({
+          key,
+          label: key.length > 40 ? key.substring(0, 40) + '...' : key,
+          period1Value: p1.quantity,
+          period2Value: p2.quantity,
+          change,
+          changePercent,
+        });
+      }
+    });
+
+    // Sort and get top 20
+    const sorted = [...movers].sort((a, b) => b.change - a.change);
+    const gainers = sorted.filter(m => m.change > 0).slice(0, 20);
+    const losers = sorted.filter(m => m.change < 0).sort((a, b) => a.change - b.change).slice(0, 20);
+
+    return { gainers, losers };
+  }, [baseFilteredOrders, period1Start, period1End, period2Start, period2End]);
+
   // PDF Export function
   const handleExportPDF = async () => {
     if (!pdfContentRef.current) return;
@@ -795,6 +912,32 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
             </select>
+          </div>
+
+          {/* Chart Mode Toggle */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setChartMode('bar')}
+              className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                chartMode === 'bar'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              Bar
+            </button>
+            <button
+              onClick={() => setChartMode('line')}
+              className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                chartMode === 'line'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              <LineChartIcon className="w-4 h-4" />
+              Line
+            </button>
           </div>
 
           {/* Marketplace Multi-Select */}
@@ -1050,202 +1193,407 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
         </div>
       )}
 
-      {/* Period 1 Chart */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-medium text-slate-700 flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-indigo-500" />
-            Period 1
-          </h3>
-          <div className="flex items-center gap-2">
-            <CalendarDays className="w-4 h-4 text-slate-400" />
-            <input
-              type="date"
-              value={period1Start}
-              onChange={(e) => setPeriod1Start(e.target.value)}
-              min={dateRange.minDate || undefined}
-              max={dateRange.maxDate || undefined}
-              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <span className="text-slate-400">to</span>
-            <input
-              type="date"
-              value={period1End}
-              onChange={(e) => setPeriod1End(e.target.value)}
-              min={period1Start || dateRange.minDate || undefined}
-              max={dateRange.maxDate || undefined}
-              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            {period1Summary.days > 0 && (
-              <span className="text-xs text-slate-500 ml-2">
-                ({period1Summary.days} days)
-              </span>
+      {/* Charts Section - Bar Mode: Two separate charts, Line Mode: One overlay chart */}
+      {chartMode === 'bar' ? (
+        <>
+          {/* Period 1 Chart */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-indigo-500" />
+                Period 1
+              </h3>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-slate-400" />
+                <input
+                  type="date"
+                  value={period1Start}
+                  onChange={(e) => setPeriod1Start(e.target.value)}
+                  min={dateRange.minDate || undefined}
+                  max={dateRange.maxDate || undefined}
+                  className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className="text-slate-400">to</span>
+                <input
+                  type="date"
+                  value={period1End}
+                  onChange={(e) => setPeriod1End(e.target.value)}
+                  min={period1Start || dateRange.minDate || undefined}
+                  max={dateRange.maxDate || undefined}
+                  className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                {period1Summary.days > 0 && (
+                  <span className="text-xs text-slate-500 ml-2">
+                    ({period1Summary.days} days)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {period1Data.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart
+                  data={period1Data}
+                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  barCategoryGap="5%"
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 10, fill: '#64748b' }}
+                    interval={Math.max(0, Math.floor(period1Data.length / 15))}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    domain={[0, sharedYAxisMax]}
+                    tickFormatter={(value) => metric === 'revenue' ? `$${(value/1000).toFixed(0)}k` : value.toLocaleString()}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  {activeGroups.map((group, index) => (
+                    <Bar
+                      key={group}
+                      dataKey={group}
+                      stackId="a"
+                      fill={getGroupColor(group, index)}
+                      maxBarSize={20}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-slate-400">
+                Select date range for Period 1
+              </div>
             )}
           </div>
-        </div>
 
-        {period1Data.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart
-              data={period1Data}
-              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-              barCategoryGap="5%"
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 10, fill: '#64748b' }}
-                interval={Math.max(0, Math.floor(period1Data.length / 15))}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: '#64748b' }}
-                domain={[0, sharedYAxisMax]}
-                tickFormatter={(value) => metric === 'revenue' ? `$${(value/1000).toFixed(0)}k` : value.toLocaleString()}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              {activeGroups.map((group, index) => (
-                <Bar
-                  key={group}
-                  dataKey={group}
-                  stackId="a"
-                  fill={getGroupColor(group, index)}
-                  maxBarSize={20}
-                />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="h-[300px] flex items-center justify-center text-slate-400">
-            Select date range for Period 1
-          </div>
-        )}
-      </div>
-
-      {/* Legend with GroupBy Toggle - Between Charts */}
-      {activeGroups.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="flex items-center justify-center gap-6 mb-3">
-            <span className="text-sm text-slate-500">Group by:</span>
-            {availableGroupByOptions.map(opt => (
-              <button
-                key={opt}
-                onClick={() => setGroupByOverride(opt)}
-                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                  effectiveGroupBy === opt
-                    ? 'bg-indigo-100 text-indigo-700 font-medium'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {opt === 'country' ? 'Country' : opt === 'category' ? 'Category' : opt === 'parent' ? 'Parent' : 'Product'}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap justify-center gap-4">
-            {activeGroups.map((group, index) => (
-              <div key={group} className="flex items-center gap-2">
-                <div
-                  className="w-4 h-4 rounded"
-                  style={{ backgroundColor: getGroupColor(group, index) }}
-                />
-                <span className="text-sm font-medium text-slate-700 truncate max-w-[150px]" title={group}>{group}</span>
+          {/* Legend with GroupBy Toggle - Between Charts */}
+          {activeGroups.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm p-4">
+              <div className="flex items-center justify-center gap-6 mb-3">
+                <span className="text-sm text-slate-500">Group by:</span>
+                {availableGroupByOptions.map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => setGroupByOverride(opt)}
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                      effectiveGroupBy === opt
+                        ? 'bg-indigo-100 text-indigo-700 font-medium'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {opt === 'country' ? 'Country' : opt === 'category' ? 'Category' : opt === 'parent' ? 'Parent' : 'Product'}
+                  </button>
+                ))}
               </div>
-            ))}
+              <div className="flex flex-wrap justify-center gap-4">
+                {activeGroups.map((group, index) => (
+                  <div key={group} className="flex items-center gap-2">
+                    <div
+                      className="w-4 h-4 rounded"
+                      style={{ backgroundColor: getGroupColor(group, index) }}
+                    />
+                    <span className="text-sm font-medium text-slate-700 truncate max-w-[150px]" title={group}>{group}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Period 2 Chart */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-orange-500" />
+                Period 2
+              </h3>
+              <div className="flex items-center gap-2">
+                {/* Quick Select Buttons */}
+                {period1Start && period1End && (
+                  <>
+                    <button
+                      onClick={setPeriod2AsPreviousPeriod}
+                      className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-50 text-orange-700 rounded hover:bg-orange-100 transition-colors"
+                      title="Set to the period immediately before Period 1"
+                    >
+                      <Rewind className="w-3 h-3" />
+                      Prev Period
+                    </button>
+                    <button
+                      onClick={setPeriod2AsPreviousYear}
+                      className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded hover:bg-purple-100 transition-colors"
+                      title="Set to the same dates one year earlier"
+                    >
+                      <History className="w-3 h-3" />
+                      Prev Year
+                    </button>
+                    <span className="text-slate-300">|</span>
+                  </>
+                )}
+                <CalendarDays className="w-4 h-4 text-slate-400" />
+                <input
+                  type="date"
+                  value={period2Start}
+                  onChange={(e) => setPeriod2Start(e.target.value)}
+                  min={dateRange.minDate || undefined}
+                  max={dateRange.maxDate || undefined}
+                  className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className="text-slate-400">to</span>
+                <input
+                  type="date"
+                  value={period2End}
+                  onChange={(e) => setPeriod2End(e.target.value)}
+                  min={period2Start || dateRange.minDate || undefined}
+                  max={dateRange.maxDate || undefined}
+                  className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                {period2Summary.days > 0 && (
+                  <span className="text-xs text-slate-500 ml-2">
+                    ({period2Summary.days} days)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {period2Data.length > 0 ? (
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart
+                  data={period2Data}
+                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  barCategoryGap="5%"
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 10, fill: '#64748b' }}
+                    interval={Math.max(0, Math.floor(period2Data.length / 15))}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    domain={[0, sharedYAxisMax]}
+                    tickFormatter={(value) => metric === 'revenue' ? `$${(value/1000).toFixed(0)}k` : value.toLocaleString()}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  {activeGroups.map((group, index) => (
+                    <Bar
+                      key={group}
+                      dataKey={group}
+                      stackId="a"
+                      fill={getGroupColor(group, index)}
+                      maxBarSize={20}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[250px] flex items-center justify-center text-slate-400">
+                Select date range for Period 2
+              </div>
+            )}
           </div>
+        </>
+      ) : (
+        /* Line Chart Mode - Single overlay chart */
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-slate-700">Period Overlay Comparison</h3>
+            <div className="flex items-center gap-4">
+              {/* Period 1 Date Range */}
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-indigo-500" />
+                <span className="text-xs text-slate-500">P1:</span>
+                <input
+                  type="date"
+                  value={period1Start}
+                  onChange={(e) => setPeriod1Start(e.target.value)}
+                  min={dateRange.minDate || undefined}
+                  max={dateRange.maxDate || undefined}
+                  className="text-xs border border-slate-200 rounded px-2 py-1"
+                />
+                <span className="text-slate-400">-</span>
+                <input
+                  type="date"
+                  value={period1End}
+                  onChange={(e) => setPeriod1End(e.target.value)}
+                  min={period1Start || dateRange.minDate || undefined}
+                  max={dateRange.maxDate || undefined}
+                  className="text-xs border border-slate-200 rounded px-2 py-1"
+                />
+              </div>
+              {/* Period 2 Date Range */}
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-orange-500" />
+                <span className="text-xs text-slate-500">P2:</span>
+                {period1Start && period1End && (
+                  <>
+                    <button
+                      onClick={setPeriod2AsPreviousPeriod}
+                      className="px-1.5 py-0.5 text-xs bg-orange-50 text-orange-700 rounded hover:bg-orange-100"
+                      title="Previous Period"
+                    >
+                      <Rewind className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={setPeriod2AsPreviousYear}
+                      className="px-1.5 py-0.5 text-xs bg-purple-50 text-purple-700 rounded hover:bg-purple-100"
+                      title="Previous Year"
+                    >
+                      <History className="w-3 h-3" />
+                    </button>
+                  </>
+                )}
+                <input
+                  type="date"
+                  value={period2Start}
+                  onChange={(e) => setPeriod2Start(e.target.value)}
+                  min={dateRange.minDate || undefined}
+                  max={dateRange.maxDate || undefined}
+                  className="text-xs border border-slate-200 rounded px-2 py-1"
+                />
+                <span className="text-slate-400">-</span>
+                <input
+                  type="date"
+                  value={period2End}
+                  onChange={(e) => setPeriod2End(e.target.value)}
+                  min={period2Start || dateRange.minDate || undefined}
+                  max={dateRange.maxDate || undefined}
+                  className="text-xs border border-slate-200 rounded px-2 py-1"
+                />
+              </div>
+            </div>
+          </div>
+
+          {lineOverlayData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart
+                data={lineOverlayData}
+                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="dayLabel"
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  interval={Math.max(0, Math.floor(lineOverlayData.length / 15))}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tickFormatter={(value) => metric === 'revenue' ? `$${(value/1000).toFixed(0)}k` : value.toLocaleString()}
+                />
+                <Tooltip
+                  formatter={(value: number | undefined) => [
+                    value !== undefined ? (metric === 'revenue' ? formatMoney(value) : value.toLocaleString()) : '-',
+                    ''
+                  ]}
+                  labelFormatter={(label) => String(label)}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="period1"
+                  name={`Period 1 (${period1Start || '?'} ~ ${period1End || '?'})`}
+                  stroke="#6366f1"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="period2"
+                  name={`Period 2 (${period2Start || '?'} ~ ${period2End || '?'})`}
+                  stroke="#f97316"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[400px] flex items-center justify-center text-slate-400">
+              Select date ranges for both periods
+            </div>
+          )}
         </div>
       )}
 
-      {/* Period 2 Chart */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-medium text-slate-700 flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-orange-500" />
-            Period 2
-          </h3>
-          <div className="flex items-center gap-2">
-            {/* Quick Select Buttons */}
-            {period1Start && period1End && (
-              <>
-                <button
-                  onClick={setPeriod2AsPreviousPeriod}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-50 text-orange-700 rounded hover:bg-orange-100 transition-colors"
-                  title="Set to the period immediately before Period 1"
-                >
-                  <Rewind className="w-3 h-3" />
-                  Prev Period
-                </button>
-                <button
-                  onClick={setPeriod2AsPreviousYear}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded hover:bg-purple-100 transition-colors"
-                  title="Set to the same dates one year earlier"
-                >
-                  <History className="w-3 h-3" />
-                  Prev Year
-                </button>
-                <span className="text-slate-300">|</span>
-              </>
-            )}
-            <CalendarDays className="w-4 h-4 text-slate-400" />
-            <input
-              type="date"
-              value={period2Start}
-              onChange={(e) => setPeriod2Start(e.target.value)}
-              min={dateRange.minDate || undefined}
-              max={dateRange.maxDate || undefined}
-              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <span className="text-slate-400">to</span>
-            <input
-              type="date"
-              value={period2End}
-              onChange={(e) => setPeriod2End(e.target.value)}
-              min={period2Start || dateRange.minDate || undefined}
-              max={dateRange.maxDate || undefined}
-              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            {period2Summary.days > 0 && (
-              <span className="text-xs text-slate-500 ml-2">
-                ({period2Summary.days} days)
-              </span>
-            )}
+      {/* Top Movers Section */}
+      {(topMovers.gainers.length > 0 || topMovers.losers.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Top Gainers */}
+          <div className="bg-white rounded-xl shadow-sm p-4">
+            <h3 className="text-sm font-medium text-green-700 mb-3 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" />
+              Top 20 Gainers (Quantity)
+            </h3>
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-2 px-2 font-medium text-slate-600">Product</th>
+                    <th className="text-right py-2 px-2 font-medium text-slate-600">P1</th>
+                    <th className="text-right py-2 px-2 font-medium text-slate-600">P2</th>
+                    <th className="text-right py-2 px-2 font-medium text-slate-600">Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topMovers.gainers.map((item, index) => (
+                    <tr key={item.key} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="py-1.5 px-2 text-slate-700 truncate max-w-[200px]" title={item.key}>
+                        {index + 1}. {item.label}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-slate-600">{item.period1Value.toLocaleString()}</td>
+                      <td className="py-1.5 px-2 text-right text-slate-600">{item.period2Value.toLocaleString()}</td>
+                      <td className="py-1.5 px-2 text-right text-green-600 font-medium">
+                        +{item.change.toLocaleString()} ({item.changePercent > 999 ? '>999' : item.changePercent.toFixed(0)}%)
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {topMovers.gainers.length === 0 && (
+                <div className="text-center py-4 text-slate-400 text-sm">No gainers found</div>
+              )}
+            </div>
+          </div>
+
+          {/* Top Losers */}
+          <div className="bg-white rounded-xl shadow-sm p-4">
+            <h3 className="text-sm font-medium text-red-700 mb-3 flex items-center gap-2">
+              <TrendingDown className="w-4 h-4" />
+              Top 20 Losers (Quantity)
+            </h3>
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-2 px-2 font-medium text-slate-600">Product</th>
+                    <th className="text-right py-2 px-2 font-medium text-slate-600">P1</th>
+                    <th className="text-right py-2 px-2 font-medium text-slate-600">P2</th>
+                    <th className="text-right py-2 px-2 font-medium text-slate-600">Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topMovers.losers.map((item, index) => (
+                    <tr key={item.key} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="py-1.5 px-2 text-slate-700 truncate max-w-[200px]" title={item.key}>
+                        {index + 1}. {item.label}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-slate-600">{item.period1Value.toLocaleString()}</td>
+                      <td className="py-1.5 px-2 text-right text-slate-600">{item.period2Value.toLocaleString()}</td>
+                      <td className="py-1.5 px-2 text-right text-red-600 font-medium">
+                        {item.change.toLocaleString()} ({item.changePercent < -999 ? '<-999' : item.changePercent.toFixed(0)}%)
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {topMovers.losers.length === 0 && (
+                <div className="text-center py-4 text-slate-400 text-sm">No losers found</div>
+              )}
+            </div>
           </div>
         </div>
-
-        {period2Data.length > 0 ? (
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart
-              data={period2Data}
-              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-              barCategoryGap="5%"
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 10, fill: '#64748b' }}
-                interval={Math.max(0, Math.floor(period2Data.length / 15))}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: '#64748b' }}
-                domain={[0, sharedYAxisMax]}
-                tickFormatter={(value) => metric === 'revenue' ? `$${(value/1000).toFixed(0)}k` : value.toLocaleString()}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              {activeGroups.map((group, index) => (
-                <Bar
-                  key={group}
-                  dataKey={group}
-                  stackId="a"
-                  fill={getGroupColor(group, index)}
-                  maxBarSize={20}
-                />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="h-[250px] flex items-center justify-center text-slate-400">
-            Select date range for Period 2
-          </div>
-        )}
-      </div>
+      )}
       </div>{/* PDF CONTENT END */}
     </div>
   );
