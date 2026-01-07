@@ -33,6 +33,7 @@ interface DailyData {
 }
 
 type MetricType = 'orders' | 'quantity' | 'revenue';
+type TimeAggregation = 'daily' | 'weekly' | 'monthly';
 
 interface PeriodComparisonAnalyzerProps {
   transactionData: TransactionData[];
@@ -106,6 +107,36 @@ const getDaysBetween = (start: string, end: string): string[] => {
   return days;
 };
 
+// Get week number for a date (ISO week)
+const getWeekKey = (dateStr: string): string => {
+  const date = new Date(dateStr);
+  const year = date.getFullYear();
+  // Get first day of year
+  const firstDayOfYear = new Date(year, 0, 1);
+  const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+  const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+  return `${year}-W${weekNum.toString().padStart(2, '0')}`;
+};
+
+// Get month key for a date
+const getMonthKey = (dateStr: string): string => {
+  const date = new Date(dateStr);
+  return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+};
+
+// Format week label
+const formatWeekLabel = (weekKey: string): string => {
+  const week = weekKey.split('-W')[1];
+  return `W${week}`;
+};
+
+// Format month label
+const formatMonthLabel = (monthKey: string): string => {
+  const [year, month] = monthKey.split('-');
+  const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+  return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+};
+
 // ============================================
 // COMPONENT
 // ============================================
@@ -130,6 +161,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [selectedFulfillment, setSelectedFulfillment] = useState<string>('all');
   const [metric, setMetric] = useState<MetricType>('orders');
+  const [timeAggregation, setTimeAggregation] = useState<TimeAggregation>('daily');
 
   // Chart grouping - auto-determined or user override
   const [groupByOverride, setGroupByOverride] = useState<GroupByType | null>(null);
@@ -333,7 +365,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     return { top10, hasOther };
   }, [baseFilteredOrders, effectiveGroupBy]);
 
-  // Calculate daily data for a period with dynamic grouping
+  // Calculate period data with time aggregation support
   const calculatePeriodData = (orders: TransactionData[], startDate: string, endDate: string): DailyData[] => {
     if (!startDate || !endDate) return [];
 
@@ -341,20 +373,85 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     const { top10, hasOther } = getTopGroupItems;
     const allGroups = hasOther ? [...top10, 'Other'] : top10;
 
+    // For weekly/monthly, we need to aggregate by time period
+    if (timeAggregation === 'weekly' || timeAggregation === 'monthly') {
+      const periodMap = new Map<string, DailyData>();
+
+      // First, determine all time periods and initialize them
+      days.forEach(date => {
+        const periodKey = timeAggregation === 'weekly' ? getWeekKey(date) : getMonthKey(date);
+        if (!periodMap.has(periodKey)) {
+          const item: DailyData = {
+            dayIndex: periodMap.size + 1,
+            date: periodKey,
+            label: timeAggregation === 'weekly' ? formatWeekLabel(periodKey) : formatMonthLabel(periodKey),
+          };
+          allGroups.forEach(group => {
+            item[group] = 0;
+          });
+          periodMap.set(periodKey, item);
+        }
+      });
+
+      // Aggregate data by time period
+      orders.forEach(tx => {
+        const txDate = tx.dateOnly || (tx.date instanceof Date ? tx.date.toISOString().split('T')[0] : new Date(tx.date).toISOString().split('T')[0]);
+        if (txDate < startDate || txDate > endDate) return;
+
+        const periodKey = timeAggregation === 'weekly' ? getWeekKey(txDate) : getMonthKey(txDate);
+        const periodData = periodMap.get(periodKey);
+        if (!periodData) return;
+
+        // Determine group key
+        let groupKey: string;
+        if (effectiveGroupBy === 'country') {
+          groupKey = tx.marketplaceCode || 'Unknown';
+        } else if (effectiveGroupBy === 'category') {
+          groupKey = tx.productCategory || 'Unknown';
+        } else if (effectiveGroupBy === 'parent') {
+          groupKey = tx.parent || 'Unknown';
+        } else {
+          groupKey = tx.name || 'Unknown';
+        }
+
+        if (!top10.includes(groupKey)) {
+          groupKey = 'Other';
+        }
+
+        const current = (periodData[groupKey] as number) || 0;
+        const country = tx.marketplaceCode || 'US';
+
+        if (metric === 'orders') {
+          periodData[groupKey] = current + 1;
+        } else if (metric === 'quantity') {
+          periodData[groupKey] = current + Math.abs(tx.quantity || 0);
+        } else {
+          const sourceCurrency = getMarketplaceCurrency(country);
+          const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
+          const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
+          periodData[groupKey] = current + usdRevenue;
+        }
+      });
+
+      // Return sorted by period
+      return Array.from(periodMap.values()).sort((a, b) =>
+        (a.date as string).localeCompare(b.date as string)
+      );
+    }
+
+    // Daily aggregation (original logic)
     const data: DailyData[] = days.map((date, index) => {
       const item: DailyData = {
         dayIndex: index + 1,
         date,
         label: formatDateForDisplay(date),
       };
-      // Initialize all groups with 0
       allGroups.forEach(group => {
         item[group] = 0;
       });
       return item;
     });
 
-    // Aggregate data by date and group
     orders.forEach(tx => {
       const txDate = tx.dateOnly || (tx.date instanceof Date ? tx.date.toISOString().split('T')[0] : new Date(tx.date).toISOString().split('T')[0]);
 
@@ -363,7 +460,6 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
       const dayIndex = days.indexOf(txDate);
       if (dayIndex === -1) return;
 
-      // Determine group key
       let groupKey: string;
       if (effectiveGroupBy === 'country') {
         groupKey = tx.marketplaceCode || 'Unknown';
@@ -375,7 +471,6 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
         groupKey = tx.name || 'Unknown';
       }
 
-      // Map to "Other" if not in top 10
       if (!top10.includes(groupKey)) {
         groupKey = 'Other';
       }
@@ -436,12 +531,12 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
   // Period 1 data
   const period1Data = useMemo(() => {
     return calculatePeriodData(baseFilteredOrders, period1Start, period1End);
-  }, [baseFilteredOrders, period1Start, period1End, metric, getTopGroupItems, effectiveGroupBy]);
+  }, [baseFilteredOrders, period1Start, period1End, metric, getTopGroupItems, effectiveGroupBy, timeAggregation]);
 
   // Period 2 data
   const period2Data = useMemo(() => {
     return calculatePeriodData(baseFilteredOrders, period2Start, period2End);
-  }, [baseFilteredOrders, period2Start, period2End, metric, getTopGroupItems, effectiveGroupBy]);
+  }, [baseFilteredOrders, period2Start, period2End, metric, getTopGroupItems, effectiveGroupBy, timeAggregation]);
 
   // Period summaries
   const period1Summary = useMemo(() => {
@@ -685,6 +780,20 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
             </select>
           </div>
 
+          {/* Time Aggregation Selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-600">View:</span>
+            <select
+              value={timeAggregation}
+              onChange={(e) => setTimeAggregation(e.target.value as TimeAggregation)}
+              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+
           {/* Marketplace Multi-Select */}
           <div className="relative">
             <div className="flex items-center gap-2">
@@ -877,6 +986,8 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
           <p className="text-sm text-slate-500 mt-1">{filterStatusText}</p>
           <p className="text-xs text-slate-400 mt-1">
             {metric === 'orders' ? 'Order Count' : metric === 'quantity' ? 'Product Quantity' : 'Revenue (USD)'}
+            {' • '}
+            {timeAggregation === 'daily' ? 'Daily' : timeAggregation === 'weekly' ? 'Weekly' : 'Monthly'} View
           </p>
         </div>
 
