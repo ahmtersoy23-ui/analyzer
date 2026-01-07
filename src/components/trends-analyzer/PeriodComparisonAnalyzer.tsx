@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Calendar, Filter, CalendarDays, TrendingUp, TrendingDown, Minus, FileDown } from 'lucide-react';
+import { Calendar, Filter, CalendarDays, TrendingUp, TrendingDown, Minus, FileDown, Rewind, History } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -66,6 +66,23 @@ const COUNTRY_COLORS: Record<string, string> = {
   TR: '#f43f5e', // rose
 };
 
+// Dynamic grouping colors (for category, parent, product)
+const DYNAMIC_COLORS = [
+  '#3b82f6', // blue
+  '#22c55e', // green
+  '#f97316', // orange
+  '#8b5cf6', // purple
+  '#ef4444', // red
+  '#eab308', // yellow
+  '#ec4899', // pink
+  '#06b6d4', // cyan
+  '#84cc16', // lime
+  '#6366f1', // indigo
+];
+const OTHER_COLOR = '#94a3b8'; // slate for "Other"
+
+type GroupByType = 'country' | 'category' | 'parent' | 'product';
+
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
@@ -113,6 +130,9 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [selectedFulfillment, setSelectedFulfillment] = useState<string>('all');
   const [metric, setMetric] = useState<MetricType>('orders');
+
+  // Chart grouping - auto-determined or user override
+  const [groupByOverride, setGroupByOverride] = useState<GroupByType | null>(null);
 
   // UI state
   const [showMarketplaceDropdown, setShowMarketplaceDropdown] = useState(false);
@@ -207,6 +227,57 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     setShowProductDropdown(false);
   };
 
+  // Period 2 quick select: Previous Period (same duration, right before period 1)
+  const setPeriod2AsPreviousPeriod = () => {
+    if (!period1Start || !period1End) return;
+
+    const start = new Date(period1Start);
+    const end = new Date(period1End);
+    const duration = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1; // days
+
+    const newEnd = new Date(start);
+    newEnd.setDate(newEnd.getDate() - 1); // day before period1Start
+
+    const newStart = new Date(newEnd);
+    newStart.setDate(newStart.getDate() - duration + 1);
+
+    setPeriod2Start(newStart.toISOString().split('T')[0]);
+    setPeriod2End(newEnd.toISOString().split('T')[0]);
+  };
+
+  // Period 2 quick select: Previous Year (same dates, 1 year earlier)
+  const setPeriod2AsPreviousYear = () => {
+    if (!period1Start || !period1End) return;
+
+    const start = new Date(period1Start);
+    const end = new Date(period1End);
+
+    start.setFullYear(start.getFullYear() - 1);
+    end.setFullYear(end.getFullYear() - 1);
+
+    setPeriod2Start(start.toISOString().split('T')[0]);
+    setPeriod2End(end.toISOString().split('T')[0]);
+  };
+
+  // Determine chart groupBy based on filter state
+  const effectiveGroupBy = useMemo((): GroupByType => {
+    if (groupByOverride) return groupByOverride;
+
+    // Hierarchy: product selected → country, parent selected → product, category selected → parent, else → country
+    if (selectedProducts.length > 0) return 'country';
+    if (selectedParentAsins.length > 0) return 'product';
+    if (selectedCategories.length > 0) return 'parent';
+    return 'country';
+  }, [groupByOverride, selectedProducts, selectedParentAsins, selectedCategories]);
+
+  // Available groupBy options based on filter state
+  const availableGroupByOptions = useMemo((): GroupByType[] => {
+    if (selectedProducts.length > 0) return ['country'];
+    if (selectedParentAsins.length > 0) return ['country', 'product'];
+    if (selectedCategories.length > 0) return ['country', 'parent'];
+    return ['country', 'category'];
+  }, [selectedProducts, selectedParentAsins, selectedCategories]);
+
   // Build filter status text for PDF
   const filterStatusText = useMemo(() => {
     const parts: string[] = [];
@@ -230,25 +301,60 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     return parts.length > 0 ? parts.join(' | ') : 'All Data';
   }, [selectedMarketplaces, selectedCategories, selectedParentAsins, selectedProducts, selectedFulfillment]);
 
-  // Calculate daily data for a period
+  // Get top N items by order count for dynamic grouping
+  const getTopGroupItems = useMemo(() => {
+    const countByGroup = new Map<string, number>();
+
+    baseFilteredOrders.forEach(tx => {
+      let key: string | null = null;
+
+      if (effectiveGroupBy === 'country') {
+        key = tx.marketplaceCode || 'Unknown';
+      } else if (effectiveGroupBy === 'category') {
+        key = tx.productCategory || 'Unknown';
+      } else if (effectiveGroupBy === 'parent') {
+        key = tx.parent || 'Unknown';
+      } else if (effectiveGroupBy === 'product') {
+        key = tx.name || 'Unknown';
+      }
+
+      if (key) {
+        countByGroup.set(key, (countByGroup.get(key) || 0) + 1);
+      }
+    });
+
+    // Sort by count and get top 10
+    const sorted = Array.from(countByGroup.entries())
+      .sort((a, b) => b[1] - a[1]);
+
+    const top10 = sorted.slice(0, 10).map(([key]) => key);
+    const hasOther = sorted.length > 10;
+
+    return { top10, hasOther };
+  }, [baseFilteredOrders, effectiveGroupBy]);
+
+  // Calculate daily data for a period with dynamic grouping
   const calculatePeriodData = (orders: TransactionData[], startDate: string, endDate: string): DailyData[] => {
     if (!startDate || !endDate) return [];
 
     const days = getDaysBetween(startDate, endDate);
-    const data: DailyData[] = days.map((date, index) => ({
-      dayIndex: index + 1,
-      date,
-      label: formatDateForDisplay(date),
-    }));
+    const { top10, hasOther } = getTopGroupItems;
+    const allGroups = hasOther ? [...top10, 'Other'] : top10;
 
-    // Initialize all countries with 0
-    marketplaces.forEach(mp => {
-      data.forEach(d => {
-        d[mp] = 0;
+    const data: DailyData[] = days.map((date, index) => {
+      const item: DailyData = {
+        dayIndex: index + 1,
+        date,
+        label: formatDateForDisplay(date),
+      };
+      // Initialize all groups with 0
+      allGroups.forEach(group => {
+        item[group] = 0;
       });
+      return item;
     });
 
-    // Aggregate data by date and country
+    // Aggregate data by date and group
     orders.forEach(tx => {
       const txDate = tx.dateOnly || (tx.date instanceof Date ? tx.date.toISOString().split('T')[0] : new Date(tx.date).toISOString().split('T')[0]);
 
@@ -257,18 +363,35 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
       const dayIndex = days.indexOf(txDate);
       if (dayIndex === -1) return;
 
-      const country = tx.marketplaceCode || 'Unknown';
-      const current = (data[dayIndex][country] as number) || 0;
+      // Determine group key
+      let groupKey: string;
+      if (effectiveGroupBy === 'country') {
+        groupKey = tx.marketplaceCode || 'Unknown';
+      } else if (effectiveGroupBy === 'category') {
+        groupKey = tx.productCategory || 'Unknown';
+      } else if (effectiveGroupBy === 'parent') {
+        groupKey = tx.parent || 'Unknown';
+      } else {
+        groupKey = tx.name || 'Unknown';
+      }
+
+      // Map to "Other" if not in top 10
+      if (!top10.includes(groupKey)) {
+        groupKey = 'Other';
+      }
+
+      const current = (data[dayIndex][groupKey] as number) || 0;
+      const country = tx.marketplaceCode || 'US';
 
       if (metric === 'orders') {
-        data[dayIndex][country] = current + 1;
+        data[dayIndex][groupKey] = current + 1;
       } else if (metric === 'quantity') {
-        data[dayIndex][country] = current + Math.abs(tx.quantity || 0);
+        data[dayIndex][groupKey] = current + Math.abs(tx.quantity || 0);
       } else {
         const sourceCurrency = getMarketplaceCurrency(country);
         const localRevenue = (tx.productSales || 0) - Math.abs(tx.promotionalRebates || 0);
         const usdRevenue = convertCurrency(localRevenue, sourceCurrency, 'USD');
-        data[dayIndex][country] = current + usdRevenue;
+        data[dayIndex][groupKey] = current + usdRevenue;
       }
     });
 
@@ -313,12 +436,12 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
   // Period 1 data
   const period1Data = useMemo(() => {
     return calculatePeriodData(baseFilteredOrders, period1Start, period1End);
-  }, [baseFilteredOrders, period1Start, period1End, metric, marketplaces]);
+  }, [baseFilteredOrders, period1Start, period1End, metric, getTopGroupItems, effectiveGroupBy]);
 
   // Period 2 data
   const period2Data = useMemo(() => {
     return calculatePeriodData(baseFilteredOrders, period2Start, period2End);
-  }, [baseFilteredOrders, period2Start, period2End, metric, marketplaces]);
+  }, [baseFilteredOrders, period2Start, period2End, metric, getTopGroupItems, effectiveGroupBy]);
 
   // Period summaries
   const period1Summary = useMemo(() => {
@@ -329,31 +452,45 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     return calculateSummary(baseFilteredOrders, period2Start, period2End);
   }, [baseFilteredOrders, period2Start, period2End]);
 
-  // Get active countries (countries with data)
-  const activeCountries = useMemo(() => {
-    const countrySet = new Set<string>();
+  // Get active groups (groups with data) - dynamically based on groupBy
+  const activeGroups = useMemo(() => {
+    const { top10, hasOther } = getTopGroupItems;
+    const allPossibleGroups = hasOther ? [...top10, 'Other'] : top10;
+    const groupSet = new Set<string>();
 
     [...period1Data, ...period2Data].forEach(day => {
-      marketplaces.forEach(mp => {
-        if ((day[mp] as number) > 0) {
-          countrySet.add(mp);
+      allPossibleGroups.forEach(group => {
+        if ((day[group] as number) > 0) {
+          groupSet.add(group);
         }
       });
     });
 
-    // Sort by total value across both periods
-    const countryTotals = new Map<string, number>();
+    // Sort by total value across both periods (keep Other at end)
+    const groupTotals = new Map<string, number>();
     [...period1Data, ...period2Data].forEach(day => {
-      Array.from(countrySet).forEach(country => {
-        const current = countryTotals.get(country) || 0;
-        countryTotals.set(country, current + ((day[country] as number) || 0));
+      Array.from(groupSet).forEach(group => {
+        const current = groupTotals.get(group) || 0;
+        groupTotals.set(group, current + ((day[group] as number) || 0));
       });
     });
 
-    return Array.from(countrySet).sort((a, b) =>
-      (countryTotals.get(b) || 0) - (countryTotals.get(a) || 0)
-    );
-  }, [period1Data, period2Data, marketplaces]);
+    return Array.from(groupSet).sort((a, b) => {
+      // Keep "Other" at the end
+      if (a === 'Other') return 1;
+      if (b === 'Other') return -1;
+      return (groupTotals.get(b) || 0) - (groupTotals.get(a) || 0);
+    });
+  }, [period1Data, period2Data, getTopGroupItems]);
+
+  // Get color for a group
+  const getGroupColor = (group: string, index: number): string => {
+    if (group === 'Other') return OTHER_COLOR;
+    if (effectiveGroupBy === 'country') {
+      return COUNTRY_COLORS[group] || DYNAMIC_COLORS[index % DYNAMIC_COLORS.length];
+    }
+    return DYNAMIC_COLORS[index % DYNAMIC_COLORS.length];
+  };
 
   // Calculate comparison metrics
   const comparison = useMemo(() => {
@@ -382,8 +519,8 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     // Find max daily total from both periods
     const allData = [...period1Data, ...period2Data];
     allData.forEach(day => {
-      const dayTotal = activeCountries.reduce((sum, country) => {
-        return sum + ((day[country] as number) || 0);
+      const dayTotal = activeGroups.reduce((sum, group) => {
+        return sum + ((day[group] as number) || 0);
       }, 0);
       if (dayTotal > maxValue) maxValue = dayTotal;
     });
@@ -392,7 +529,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     if (maxValue === 0) return 100;
     const magnitude = Math.pow(10, Math.floor(Math.log10(maxValue)));
     return Math.ceil(maxValue / magnitude) * magnitude;
-  }, [period1Data, period2Data, activeCountries]);
+  }, [period1Data, period2Data, activeGroups]);
 
   // PDF Export function
   const handleExportPDF = async () => {
@@ -852,12 +989,12 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
                 tickFormatter={(value) => metric === 'revenue' ? `$${(value/1000).toFixed(0)}k` : value.toLocaleString()}
               />
               <Tooltip content={<CustomTooltip />} />
-              {activeCountries.map(country => (
+              {activeGroups.map((group, index) => (
                 <Bar
-                  key={country}
-                  dataKey={country}
+                  key={group}
+                  dataKey={group}
                   stackId="a"
-                  fill={COUNTRY_COLORS[country] || '#94a3b8'}
+                  fill={getGroupColor(group, index)}
                   maxBarSize={20}
                 />
               ))}
@@ -870,17 +1007,33 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
         )}
       </div>
 
-      {/* Country Legend - Between Charts */}
-      {activeCountries.length > 0 && (
+      {/* Legend with GroupBy Toggle - Between Charts */}
+      {activeGroups.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm p-4">
+          <div className="flex items-center justify-center gap-6 mb-3">
+            <span className="text-sm text-slate-500">Group by:</span>
+            {availableGroupByOptions.map(opt => (
+              <button
+                key={opt}
+                onClick={() => setGroupByOverride(opt)}
+                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                  effectiveGroupBy === opt
+                    ? 'bg-indigo-100 text-indigo-700 font-medium'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {opt === 'country' ? 'Country' : opt === 'category' ? 'Category' : opt === 'parent' ? 'Parent' : 'Product'}
+              </button>
+            ))}
+          </div>
           <div className="flex flex-wrap justify-center gap-4">
-            {activeCountries.map(country => (
-              <div key={country} className="flex items-center gap-2">
+            {activeGroups.map((group, index) => (
+              <div key={group} className="flex items-center gap-2">
                 <div
                   className="w-4 h-4 rounded"
-                  style={{ backgroundColor: COUNTRY_COLORS[country] || '#94a3b8' }}
+                  style={{ backgroundColor: getGroupColor(group, index) }}
                 />
-                <span className="text-sm font-medium text-slate-700">{country}</span>
+                <span className="text-sm font-medium text-slate-700 truncate max-w-[150px]" title={group}>{group}</span>
               </div>
             ))}
           </div>
@@ -895,6 +1048,28 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
             Period 2
           </h3>
           <div className="flex items-center gap-2">
+            {/* Quick Select Buttons */}
+            {period1Start && period1End && (
+              <>
+                <button
+                  onClick={setPeriod2AsPreviousPeriod}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-50 text-orange-700 rounded hover:bg-orange-100 transition-colors"
+                  title="Set to the period immediately before Period 1"
+                >
+                  <Rewind className="w-3 h-3" />
+                  Prev Period
+                </button>
+                <button
+                  onClick={setPeriod2AsPreviousYear}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded hover:bg-purple-100 transition-colors"
+                  title="Set to the same dates one year earlier"
+                >
+                  <History className="w-3 h-3" />
+                  Prev Year
+                </button>
+                <span className="text-slate-300">|</span>
+              </>
+            )}
             <CalendarDays className="w-4 h-4 text-slate-400" />
             <input
               type="date"
@@ -940,12 +1115,12 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
                 tickFormatter={(value) => metric === 'revenue' ? `$${(value/1000).toFixed(0)}k` : value.toLocaleString()}
               />
               <Tooltip content={<CustomTooltip />} />
-              {activeCountries.map(country => (
+              {activeGroups.map((group, index) => (
                 <Bar
-                  key={country}
-                  dataKey={country}
+                  key={group}
+                  dataKey={group}
                   stackId="a"
-                  fill={COUNTRY_COLORS[country] || '#94a3b8'}
+                  fill={getGroupColor(group, index)}
                   maxBarSize={20}
                 />
               ))}
