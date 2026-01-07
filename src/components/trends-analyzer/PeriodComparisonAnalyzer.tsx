@@ -50,7 +50,8 @@ interface TopMoverItem {
 
 interface LineOverlayData {
   dayIndex: number;
-  dayLabel: string;
+  period1Label: string;
+  period2Label: string;
   period1: number;
   period2: number;
 }
@@ -183,6 +184,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
   const [metric, setMetric] = useState<MetricType>('orders');
   const [timeAggregation, setTimeAggregation] = useState<TimeAggregation>('daily');
   const [chartMode, setChartMode] = useState<ChartMode>('bar');
+  const [topMoversGroupBy, setTopMoversGroupBy] = useState<'product' | 'parent'>('product');
 
   // Chart grouping - auto-determined or user override
   const [groupByOverride, setGroupByOverride] = useState<GroupByType | null>(null);
@@ -650,7 +652,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     return Math.ceil(maxValue / magnitude) * magnitude;
   }, [period1Data, period2Data, activeGroups]);
 
-  // Line overlay data - Day 1, Day 2... format with both periods
+  // Line overlay data - uses actual labels from period data
   const lineOverlayData = useMemo((): LineOverlayData[] => {
     if (period1Data.length === 0 && period2Data.length === 0) return [];
 
@@ -665,9 +667,14 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
       const p1Total = p1Day ? activeGroups.reduce((sum, g) => sum + ((p1Day[g] as number) || 0), 0) : 0;
       const p2Total = p2Day ? activeGroups.reduce((sum, g) => sum + ((p2Day[g] as number) || 0), 0) : 0;
 
+      // Use actual labels from period data (Jan 1, W01, Jan '25, etc.)
+      const p1Label = p1Day ? String(p1Day.label) : '';
+      const p2Label = p2Day ? String(p2Day.label) : '';
+
       data.push({
         dayIndex: i + 1,
-        dayLabel: `Day ${i + 1}`,
+        period1Label: p1Label,
+        period2Label: p2Label,
         period1: p1Total,
         period2: p2Total,
       });
@@ -676,19 +683,22 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     return data;
   }, [period1Data, period2Data, activeGroups]);
 
-  // Top Movers calculation - by product/parent/category
+  // Top Movers calculation - by product or parent
   const topMovers = useMemo(() => {
     if (!period1Start || !period1End || !period2Start || !period2End) {
       return { gainers: [], losers: [] };
     }
 
-    // Group by product name (most granular useful level)
     const period1Map = new Map<string, { quantity: number; revenue: number }>();
     const period2Map = new Map<string, { quantity: number; revenue: number }>();
 
     baseFilteredOrders.forEach(tx => {
       const txDate = tx.dateOnly || (tx.date instanceof Date ? tx.date.toISOString().split('T')[0] : new Date(tx.date).toISOString().split('T')[0]);
-      const key = tx.name || tx.sku || 'Unknown';
+
+      // Use parent or product based on toggle
+      const key = topMoversGroupBy === 'parent'
+        ? (tx.parent || 'Unknown')
+        : (tx.name || tx.sku || 'Unknown');
 
       const country = tx.marketplaceCode || 'US';
       const sourceCurrency = getMarketplaceCurrency(country);
@@ -713,15 +723,15 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
       }
     });
 
-    // Calculate changes for all products
-    const allProducts = new Set([...Array.from(period1Map.keys()), ...Array.from(period2Map.keys())]);
+    // Calculate changes for all items
+    const allItems = new Set([...Array.from(period1Map.keys()), ...Array.from(period2Map.keys())]);
     const movers: TopMoverItem[] = [];
 
-    allProducts.forEach(key => {
+    allItems.forEach(key => {
       const p1 = period1Map.get(key) || { quantity: 0, revenue: 0 };
       const p2 = period2Map.get(key) || { quantity: 0, revenue: 0 };
 
-      // Use quantity for comparison (as requested)
+      // Use quantity for comparison
       const change = p1.quantity - p2.quantity;
       const changePercent = p2.quantity > 0 ? (change / p2.quantity) * 100 : (p1.quantity > 0 ? 100 : 0);
 
@@ -729,7 +739,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
       if (p1.quantity > 0 || p2.quantity > 0) {
         movers.push({
           key,
-          label: key.length > 40 ? key.substring(0, 40) + '...' : key,
+          label: key, // Full name, no truncation
           period1Value: p1.quantity,
           period2Value: p2.quantity,
           change,
@@ -744,7 +754,7 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
     const losers = sorted.filter(m => m.change < 0).sort((a, b) => a.change - b.change).slice(0, 20);
 
     return { gainers, losers };
-  }, [baseFilteredOrders, period1Start, period1End, period2Start, period2End]);
+  }, [baseFilteredOrders, period1Start, period1End, period2Start, period2End, topMoversGroupBy]);
 
   // PDF Export function
   const handleExportPDF = async () => {
@@ -1468,13 +1478,27 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
             <ResponsiveContainer width="100%" height={400}>
               <LineChart
                 data={lineOverlayData}
-                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                margin={{ top: 5, right: 30, left: 20, bottom: 40 }}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis
-                  dataKey="dayLabel"
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  interval={Math.max(0, Math.floor(lineOverlayData.length / 15))}
+                  dataKey="dayIndex"
+                  tick={(props: any) => {
+                    const { x, y, payload } = props;
+                    const item = lineOverlayData[payload.value - 1];
+                    if (!item) return null;
+                    return (
+                      <g transform={`translate(${x},${y})`}>
+                        <text x={0} y={0} dy={12} textAnchor="middle" fontSize={9} fill="#6366f1">
+                          {item.period1Label}
+                        </text>
+                        <text x={0} y={0} dy={24} textAnchor="middle" fontSize={9} fill="#f97316">
+                          {item.period2Label}
+                        </text>
+                      </g>
+                    );
+                  }}
+                  interval={Math.max(0, Math.floor(lineOverlayData.length / 12))}
                 />
                 <YAxis
                   tick={{ fontSize: 11, fill: '#64748b' }}
@@ -1518,32 +1542,64 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
 
       {/* Top Movers Section */}
       {(topMovers.gainers.length > 0 || topMovers.losers.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-4">
+          {/* Toggle Header */}
+          <div className="bg-white rounded-xl shadow-sm p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-slate-700">Top 20 Movers (Quantity)</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Group by:</span>
+                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setTopMoversGroupBy('product')}
+                    className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                      topMoversGroupBy === 'product'
+                        ? 'bg-white text-indigo-700 shadow-sm font-medium'
+                        : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    Product
+                  </button>
+                  <button
+                    onClick={() => setTopMoversGroupBy('parent')}
+                    className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                      topMoversGroupBy === 'parent'
+                        ? 'bg-white text-indigo-700 shadow-sm font-medium'
+                        : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    Parent
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Top Gainers */}
           <div className="bg-white rounded-xl shadow-sm p-4">
             <h3 className="text-sm font-medium text-green-700 mb-3 flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
-              Top 20 Gainers (Quantity)
+              Top 20 Gainers
             </h3>
-            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-white">
                   <tr className="border-b border-slate-200">
-                    <th className="text-left py-2 px-2 font-medium text-slate-600">Product</th>
-                    <th className="text-right py-2 px-2 font-medium text-slate-600">P1</th>
-                    <th className="text-right py-2 px-2 font-medium text-slate-600">P2</th>
-                    <th className="text-right py-2 px-2 font-medium text-slate-600">Change</th>
+                    <th className="text-left py-2 px-3 font-medium text-slate-600">{topMoversGroupBy === 'parent' ? 'Parent' : 'Product'}</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">P1</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">P2</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">Change</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {topMovers.gainers.map((item, index) => (
+                  {topMovers.gainers.map((item) => (
                     <tr key={item.key} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="py-1.5 px-2 text-slate-700 truncate max-w-[200px]" title={item.key}>
-                        {index + 1}. {item.label}
+                      <td className="py-2 px-3 text-left text-slate-700">
+                        {item.label}
                       </td>
-                      <td className="py-1.5 px-2 text-right text-slate-600">{item.period1Value.toLocaleString()}</td>
-                      <td className="py-1.5 px-2 text-right text-slate-600">{item.period2Value.toLocaleString()}</td>
-                      <td className="py-1.5 px-2 text-right text-green-600 font-medium">
+                      <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">{item.period1Value.toLocaleString()}</td>
+                      <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">{item.period2Value.toLocaleString()}</td>
+                      <td className="py-2 px-3 text-right text-green-600 font-medium whitespace-nowrap">
                         +{item.change.toLocaleString()} ({item.changePercent > 999 ? '>999' : item.changePercent.toFixed(0)}%)
                       </td>
                     </tr>
@@ -1560,27 +1616,27 @@ const PeriodComparisonAnalyzer: React.FC<PeriodComparisonAnalyzerProps> = ({ tra
           <div className="bg-white rounded-xl shadow-sm p-4">
             <h3 className="text-sm font-medium text-red-700 mb-3 flex items-center gap-2">
               <TrendingDown className="w-4 h-4" />
-              Top 20 Losers (Quantity)
+              Top 20 Losers
             </h3>
-            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-white">
                   <tr className="border-b border-slate-200">
-                    <th className="text-left py-2 px-2 font-medium text-slate-600">Product</th>
-                    <th className="text-right py-2 px-2 font-medium text-slate-600">P1</th>
-                    <th className="text-right py-2 px-2 font-medium text-slate-600">P2</th>
-                    <th className="text-right py-2 px-2 font-medium text-slate-600">Change</th>
+                    <th className="text-left py-2 px-3 font-medium text-slate-600">{topMoversGroupBy === 'parent' ? 'Parent' : 'Product'}</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">P1</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">P2</th>
+                    <th className="text-right py-2 px-3 font-medium text-slate-600 whitespace-nowrap">Change</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {topMovers.losers.map((item, index) => (
+                  {topMovers.losers.map((item) => (
                     <tr key={item.key} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="py-1.5 px-2 text-slate-700 truncate max-w-[200px]" title={item.key}>
-                        {index + 1}. {item.label}
+                      <td className="py-2 px-3 text-left text-slate-700">
+                        {item.label}
                       </td>
-                      <td className="py-1.5 px-2 text-right text-slate-600">{item.period1Value.toLocaleString()}</td>
-                      <td className="py-1.5 px-2 text-right text-slate-600">{item.period2Value.toLocaleString()}</td>
-                      <td className="py-1.5 px-2 text-right text-red-600 font-medium">
+                      <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">{item.period1Value.toLocaleString()}</td>
+                      <td className="py-2 px-3 text-right text-slate-600 whitespace-nowrap">{item.period2Value.toLocaleString()}</td>
+                      <td className="py-2 px-3 text-right text-red-600 font-medium whitespace-nowrap">
                         {item.change.toLocaleString()} ({item.changePercent < -999 ? '<-999' : item.changePercent.toFixed(0)}%)
                       </td>
                     </tr>
