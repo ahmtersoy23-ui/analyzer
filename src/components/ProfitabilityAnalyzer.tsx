@@ -915,11 +915,72 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       filtered = filtered.filter(p => p.fulfillment === 'FBM');
     }
 
-    // Sort by revenue descending
-    filtered.sort((a, b) => b.totalRevenue - a.totalRevenue);
+    // Sort
+    filtered.sort((a, b) => {
+      let aValue: number | string = 0;
+      let bValue: number | string = 0;
+
+      switch (sortColumn) {
+        case 'parent':
+          return sortDirection === 'asc'
+            ? a.parent.localeCompare(b.parent)
+            : b.parent.localeCompare(a.parent);
+        case 'category':
+          return sortDirection === 'asc'
+            ? a.category.localeCompare(b.category)
+            : b.category.localeCompare(a.category);
+        case 'totalRevenue':
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+          break;
+        case 'netProfit':
+          aValue = a.netProfit;
+          bValue = b.netProfit;
+          break;
+        case 'profitMargin':
+          aValue = a.profitMargin;
+          bValue = b.profitMargin;
+          break;
+        case 'totalOrders':
+          aValue = a.totalOrders;
+          bValue = b.totalOrders;
+          break;
+        case 'totalQuantity':
+          aValue = a.totalQuantity;
+          bValue = b.totalQuantity;
+          break;
+        case 'sellingFees':
+          aValue = a.sellingFees;
+          bValue = b.sellingFees;
+          break;
+        case 'fbaFees':
+          aValue = a.fbaFees;
+          bValue = b.fbaFees;
+          break;
+        case 'refundLoss':
+          aValue = a.refundLoss;
+          bValue = b.refundLoss;
+          break;
+        case 'totalProductCost':
+          aValue = a.totalProductCost;
+          bValue = b.totalProductCost;
+          break;
+        case 'shippingCost':
+          aValue = a.shippingCost;
+          bValue = b.shippingCost;
+          break;
+        default:
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+      }
+
+      return sortDirection === 'asc'
+        ? (aValue as number) - (bValue as number)
+        : (bValue as number) - (aValue as number);
+    });
 
     return filtered;
-  }, [parentProfitability, filterCategory, filterParent, filterFulfillment]);
+  }, [parentProfitability, filterCategory, filterParent, filterFulfillment, sortColumn, sortDirection]);
 
   const displayCategories = useMemo(() => {
     let filtered = [...categoryProfitability];
@@ -936,11 +997,68 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       filtered = filtered.filter(c => c.fulfillment === 'FBM');
     }
 
-    // Sort by revenue descending
-    filtered.sort((a, b) => b.totalRevenue - a.totalRevenue);
+    // Sort
+    filtered.sort((a, b) => {
+      let aValue: number | string = 0;
+      let bValue: number | string = 0;
+
+      switch (sortColumn) {
+        case 'category':
+          return sortDirection === 'asc'
+            ? a.category.localeCompare(b.category)
+            : b.category.localeCompare(a.category);
+        case 'totalRevenue':
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+          break;
+        case 'netProfit':
+          aValue = a.netProfit;
+          bValue = b.netProfit;
+          break;
+        case 'profitMargin':
+          aValue = a.profitMargin;
+          bValue = b.profitMargin;
+          break;
+        case 'totalOrders':
+          aValue = a.totalOrders;
+          bValue = b.totalOrders;
+          break;
+        case 'totalQuantity':
+          aValue = a.totalQuantity;
+          bValue = b.totalQuantity;
+          break;
+        case 'sellingFees':
+          aValue = a.sellingFees;
+          bValue = b.sellingFees;
+          break;
+        case 'fbaFees':
+          aValue = a.fbaFees;
+          bValue = b.fbaFees;
+          break;
+        case 'refundLoss':
+          aValue = a.refundLoss;
+          bValue = b.refundLoss;
+          break;
+        case 'totalProductCost':
+          aValue = a.totalProductCost;
+          bValue = b.totalProductCost;
+          break;
+        case 'shippingCost':
+          aValue = a.shippingCost;
+          bValue = b.shippingCost;
+          break;
+        default:
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+      }
+
+      return sortDirection === 'asc'
+        ? (aValue as number) - (bValue as number)
+        : (bValue as number) - (aValue as number);
+    });
 
     return filtered;
-  }, [categoryProfitability, filterCategory, filterFulfillment]);
+  }, [categoryProfitability, filterCategory, filterFulfillment, sortColumn, sortDirection]);
 
   // FBM Name Info - FBM/Mixed satışları olan NAME'leri çıkar (Override editörü için)
   // SADECE US pazarı için geçerli - diğer pazarlarda FBM zaten TR'den gönderilir
