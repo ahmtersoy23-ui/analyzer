@@ -1211,28 +1211,33 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           bValue = b.totalOrders;
           break;
         case 'sellingFees':
-          aValue = a.sellingFees;
-          bValue = b.sellingFees;
+          // Sort by percentage, not absolute value
+          aValue = a.sellingFeePercent;
+          bValue = b.sellingFeePercent;
           break;
         case 'fbaFees':
-          aValue = a.fbaFees;
-          bValue = b.fbaFees;
+          // Sort by percentage, not absolute value
+          aValue = a.fbaFeePercent;
+          bValue = b.fbaFeePercent;
           break;
         case 'totalQuantity':
           aValue = a.totalQuantity;
           bValue = b.totalQuantity;
           break;
         case 'refundLoss':
-          aValue = a.refundLoss;
-          bValue = b.refundLoss;
+          // Sort by percentage, not absolute value
+          aValue = a.refundLossPercent;
+          bValue = b.refundLossPercent;
           break;
         case 'totalProductCost':
-          aValue = a.totalProductCost;
-          bValue = b.totalProductCost;
+          // Sort by percentage, not absolute value
+          aValue = a.productCostPercent;
+          bValue = b.productCostPercent;
           break;
         case 'shippingCost':
-          aValue = a.shippingCost;
-          bValue = b.shippingCost;
+          // Sort by percentage, not absolute value
+          aValue = a.shippingCostPercent;
+          bValue = b.shippingCostPercent;
           break;
         default:
           aValue = a.totalRevenue;
@@ -1304,40 +1309,48 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           bValue = b.totalOrders;
           break;
         case 'sellingFees':
-          aValue = a.sellingFees;
-          bValue = b.sellingFees;
+          // Sort by percentage, not absolute value
+          aValue = a.sellingFeePercent;
+          bValue = b.sellingFeePercent;
           break;
         case 'fbaFees':
-          aValue = a.fbaFees;
-          bValue = b.fbaFees;
+          // Sort by percentage, not absolute value
+          aValue = a.fbaFeePercent;
+          bValue = b.fbaFeePercent;
           break;
         case 'totalQuantity':
           aValue = a.totalQuantity;
           bValue = b.totalQuantity;
           break;
         case 'refundLoss':
-          aValue = a.refundLoss;
-          bValue = b.refundLoss;
+          // Sort by percentage, not absolute value
+          aValue = a.refundLossPercent;
+          bValue = b.refundLossPercent;
           break;
         case 'advertisingCost':
-          aValue = a.advertisingCost;
-          bValue = b.advertisingCost;
+          // Sort by percentage, not absolute value
+          aValue = a.advertisingPercent;
+          bValue = b.advertisingPercent;
           break;
         case 'fbaCost':
-          aValue = a.fbaCost;
-          bValue = b.fbaCost;
+          // Sort by percentage, not absolute value
+          aValue = a.fbaCostPercent;
+          bValue = b.fbaCostPercent;
           break;
         case 'fbmCost':
-          aValue = a.fbmCost;
-          bValue = b.fbmCost;
+          // Sort by percentage, not absolute value
+          aValue = a.fbmCostPercent;
+          bValue = b.fbmCostPercent;
           break;
         case 'productCost':
-          aValue = a.productCost ?? 0;
-          bValue = b.productCost ?? 0;
+          // Sort by percentage, not absolute value
+          aValue = a.productCostPercent;
+          bValue = b.productCostPercent;
           break;
         case 'shippingCost':
-          aValue = a.shippingCost;
-          bValue = b.shippingCost;
+          // Sort by percentage, not absolute value
+          aValue = a.shippingCostPercent;
+          bValue = b.shippingCostPercent;
           break;
         case 'othersCost':
           aValue = a.othersCost;
@@ -1348,8 +1361,9 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           bValue = b.refundedQuantity;
           break;
         case 'vat':
-          aValue = a.vat;
-          bValue = b.vat;
+          // Sort by percentage, not absolute value
+          aValue = a.vatPercent;
+          bValue = b.vatPercent;
           break;
         case 'customsDuty':
           aValue = a.customsDuty;
