@@ -949,25 +949,54 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           aValue = a.totalQuantity;
           bValue = b.totalQuantity;
           break;
+        case 'refundedQuantity':
+          aValue = a.refundedQuantity;
+          bValue = b.refundedQuantity;
+          break;
         case 'sellingFees':
-          aValue = a.sellingFees;
-          bValue = b.sellingFees;
+          // Sort by percentage, not absolute value
+          aValue = a.sellingFeePercent;
+          bValue = b.sellingFeePercent;
           break;
         case 'fbaFees':
-          aValue = a.fbaFees;
-          bValue = b.fbaFees;
+          // Sort by percentage, not absolute value
+          aValue = a.fbaFeePercent;
+          bValue = b.fbaFeePercent;
           break;
         case 'refundLoss':
-          aValue = a.refundLoss;
-          bValue = b.refundLoss;
+          // Sort by percentage, not absolute value
+          aValue = a.refundLossPercent;
+          bValue = b.refundLossPercent;
+          break;
+        case 'vat':
+          // Sort by percentage, not absolute value
+          aValue = a.vatPercent;
+          bValue = b.vatPercent;
+          break;
+        case 'advertisingCost':
+          // Sort by percentage, not absolute value
+          aValue = a.advertisingPercent;
+          bValue = b.advertisingPercent;
+          break;
+        case 'fbaCost':
+          // Sort by percentage, not absolute value
+          aValue = a.fbaCostPercent;
+          bValue = b.fbaCostPercent;
+          break;
+        case 'fbmCost':
+          // Sort by percentage, not absolute value
+          aValue = a.fbmCostPercent;
+          bValue = b.fbmCostPercent;
           break;
         case 'totalProductCost':
-          aValue = a.totalProductCost;
-          bValue = b.totalProductCost;
+          // Sort by percentage, not absolute value
+          aValue = a.productCostPercent;
+          bValue = b.productCostPercent;
           break;
         case 'shippingCost':
-          aValue = a.shippingCost;
-          bValue = b.shippingCost;
+          // Sort by percentage, not absolute value
+          aValue = a.shippingCostPercent;
+          bValue = b.shippingCostPercent;
           break;
         default:
           aValue = a.totalRevenue;
@@ -1027,25 +1056,54 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
           aValue = a.totalQuantity;
           bValue = b.totalQuantity;
           break;
+        case 'refundedQuantity':
+          aValue = a.refundedQuantity;
+          bValue = b.refundedQuantity;
+          break;
         case 'sellingFees':
-          aValue = a.sellingFees;
-          bValue = b.sellingFees;
+          // Sort by percentage, not absolute value
+          aValue = a.sellingFeePercent;
+          bValue = b.sellingFeePercent;
           break;
         case 'fbaFees':
-          aValue = a.fbaFees;
-          bValue = b.fbaFees;
+          // Sort by percentage, not absolute value
+          aValue = a.fbaFeePercent;
+          bValue = b.fbaFeePercent;
           break;
         case 'refundLoss':
-          aValue = a.refundLoss;
-          bValue = b.refundLoss;
+          // Sort by percentage, not absolute value
+          aValue = a.refundLossPercent;
+          bValue = b.refundLossPercent;
+          break;
+        case 'vat':
+          // Sort by percentage, not absolute value
+          aValue = a.vatPercent;
+          bValue = b.vatPercent;
+          break;
+        case 'advertisingCost':
+          // Sort by percentage, not absolute value
+          aValue = a.advertisingPercent;
+          bValue = b.advertisingPercent;
+          break;
+        case 'fbaCost':
+          // Sort by percentage, not absolute value
+          aValue = a.fbaCostPercent;
+          bValue = b.fbaCostPercent;
+          break;
+        case 'fbmCost':
+          // Sort by percentage, not absolute value
+          aValue = a.fbmCostPercent;
+          bValue = b.fbmCostPercent;
           break;
         case 'totalProductCost':
-          aValue = a.totalProductCost;
-          bValue = b.totalProductCost;
+          // Sort by percentage, not absolute value
+          aValue = a.productCostPercent;
+          bValue = b.productCostPercent;
           break;
         case 'shippingCost':
-          aValue = a.shippingCost;
-          bValue = b.shippingCost;
+          // Sort by percentage, not absolute value
+          aValue = a.shippingCostPercent;
+          bValue = b.shippingCostPercent;
           break;
         default:
           aValue = a.totalRevenue;
