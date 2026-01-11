@@ -5,6 +5,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import type { ColumnFilterValue } from '../components/shared/ColumnFilter';
 
 // ============================================
 // TYPES
@@ -12,6 +13,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 
 export type DetailsViewMode = 'category' | 'parent' | 'name' | 'sku';
 export type SortDirection = 'asc' | 'desc';
+
+// Column filters type - key is column name, value is filter
+export type ColumnFilters = Record<string, ColumnFilterValue | null>;
 
 interface SavedFilters {
   startDate?: string;
@@ -46,6 +50,9 @@ interface ProfitabilityFilterState {
   // Pagination
   currentPage: number;
   itemsPerPage: number;
+
+  // Column filters
+  columnFilters: ColumnFilters;
 }
 
 interface ProfitabilityFilterActions {
@@ -66,6 +73,9 @@ interface ProfitabilityFilterActions {
   setCurrentPage: (page: number) => void;
   handleSort: (column: string) => void;
   resetFilters: () => void;
+  setColumnFilter: (column: string, value: ColumnFilterValue | null) => void;
+  clearAllColumnFilters: () => void;
+  activeFilterCount: number;
 }
 
 type ProfitabilityFilterContextType = ProfitabilityFilterState & ProfitabilityFilterActions;
@@ -153,6 +163,30 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 100;
 
+  // Column filters
+  const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
+
+  // Set single column filter
+  const setColumnFilter = useCallback((column: string, value: ColumnFilterValue | null) => {
+    setColumnFilters(prev => {
+      if (value === null) {
+        const { [column]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [column]: value };
+    });
+  }, []);
+
+  // Clear all column filters
+  const clearAllColumnFilters = useCallback(() => {
+    setColumnFilters({});
+  }, []);
+
+  // Count active filters
+  const activeFilterCount = useMemo(() => {
+    return Object.values(columnFilters).filter(v => v !== null).length;
+  }, [columnFilters]);
+
   // Save to localStorage when main filters change
   useEffect(() => {
     saveFilters({
@@ -196,6 +230,7 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
     setSortColumn('totalRevenue');
     setSortDirection('desc');
     setCurrentPage(1);
+    setColumnFilters({});
   }, []);
 
   // Memoized context value
@@ -216,6 +251,7 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
     sortDirection,
     currentPage,
     itemsPerPage,
+    columnFilters,
 
     // Actions
     setStartDate,
@@ -235,6 +271,9 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
     setCurrentPage,
     handleSort,
     resetFilters,
+    setColumnFilter,
+    clearAllColumnFilters,
+    activeFilterCount,
   }), [
     startDate,
     endDate,
@@ -253,6 +292,10 @@ export const ProfitabilityFilterProvider: React.FC<ProfitabilityFilterProviderPr
     handleSort,
     resetFilters,
     toggleMarketplace,
+    columnFilters,
+    setColumnFilter,
+    clearAllColumnFilters,
+    activeFilterCount,
   ]);
 
   return (

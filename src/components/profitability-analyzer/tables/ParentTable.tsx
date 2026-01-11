@@ -5,6 +5,8 @@
 import React from 'react';
 import { formatPercent } from '../../../utils/formatters';
 import { SortableHeader } from '../../shared/SortableHeader';
+import type { ColumnFilterValue } from '../../shared/ColumnFilter';
+import type { ColumnFilters } from '../../../contexts/ProfitabilityFilterContext';
 import type { SelectedItemType } from '../PieChartModal';
 import type { ParentProfitAnalysis } from '../../../services/profitability/profitabilityAnalytics';
 
@@ -15,6 +17,8 @@ export interface ParentTableProps {
   formatMoney: (amount: number) => string;
   onSort: (column: string) => void;
   onSelectItem: (item: SelectedItemType | null) => void;
+  columnFilters: ColumnFilters;
+  onFilterChange: (column: string, value: ColumnFilterValue | null) => void;
 }
 
 export const ParentTable: React.FC<ParentTableProps> = ({
@@ -24,6 +28,8 @@ export const ParentTable: React.FC<ParentTableProps> = ({
   formatMoney,
   onSort,
   onSelectItem,
+  columnFilters,
+  onFilterChange,
 }) => {
   return (
     <table className="w-full min-w-max divide-y divide-slate-200 text-xs">
@@ -32,12 +38,12 @@ export const ParentTable: React.FC<ParentTableProps> = ({
           <SortableHeader column="parent" label="Parent ASIN" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} color="purple" className="sticky left-0 bg-slate-50 z-30 min-w-[150px] border-r border-slate-200" />
           <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600 whitespace-nowrap">Category</th>
           <th className="px-3 py-2 text-center text-xs font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200">#Products</th>
-          <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
-          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50" />
-          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50 border-r border-slate-200" />
-          <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
-          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" />
-          <SortableHeader column="refundedQuantity" label="RQty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="border-r border-slate-200" />
+          <SortableHeader column="totalRevenue" label="Revenue" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" filterable filterValue={columnFilters.totalRevenue} onFilterChange={onFilterChange} />
+          <SortableHeader column="netProfit" label="Net Profit" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50" filterable filterValue={columnFilters.netProfit} onFilterChange={onFilterChange} />
+          <SortableHeader column="profitMargin" label="Margin" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-green-50 border-r border-slate-200" filterable filterValue={columnFilters.profitMargin} onFilterChange={onFilterChange} />
+          <SortableHeader column="totalOrders" label="Orders" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" filterable filterValue={columnFilters.totalOrders} onFilterChange={onFilterChange} />
+          <SortableHeader column="totalQuantity" label="Qty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" filterable filterValue={columnFilters.totalQuantity} onFilterChange={onFilterChange} />
+          <SortableHeader column="refundedQuantity" label="RQty" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="border-r border-slate-200" filterable filterValue={columnFilters.refundedQuantity} onFilterChange={onFilterChange} />
           <SortableHeader column="sellingFees" label="Selling" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50" />
           <SortableHeader column="fbaFees" label="FBA Fee" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50" />
           <SortableHeader column="refundLoss" label="Refund" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" color="purple" className="bg-red-50" />

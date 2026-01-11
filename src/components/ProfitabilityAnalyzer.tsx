@@ -48,6 +48,7 @@ import { CategoryCardsSection } from './profitability-analyzer/CategoryCardsSect
 import { FiltersSection } from './profitability-analyzer/FiltersSection';
 import { CoverageStatsSection } from './profitability-analyzer/CoverageStatsSection';
 import { exportMissingSKUsToPriceLab, type MissingSKUInfo } from '../services/productMapping';
+import { passesFilter } from './shared/ColumnFilter';
 import { fetchFbmOverrides, saveFbmOverridesBulk, type FbmOverride } from '../services/api/configApi';
 
 // Types needed for lazy components
@@ -121,6 +122,10 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     setFilterFulfillment,
     setFilterCategory,
     setExcludeGradeResell,
+    columnFilters,
+    setColumnFilter,
+    activeFilterCount,
+    clearAllColumnFilters,
   } = useProfitabilityFilters();
 
   // ============================================
@@ -915,6 +920,31 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
       filtered = filtered.filter(p => p.fulfillment === 'FBM');
     }
 
+    // Apply column filters
+    if (Object.keys(columnFilters).length > 0) {
+      filtered = filtered.filter(p => {
+        // Map column names to data fields
+        const columnValueMap: Record<string, number> = {
+          totalRevenue: p.totalRevenue,
+          netProfit: p.netProfit,
+          profitMargin: p.profitMargin,
+          totalOrders: p.totalOrders,
+          totalQuantity: p.totalQuantity,
+          refundedQuantity: p.refundedQuantity,
+        };
+
+        // Check each active filter
+        for (const [column, filter] of Object.entries(columnFilters)) {
+          if (filter && column in columnValueMap) {
+            if (!passesFilter(columnValueMap[column], filter)) {
+              return false;
+            }
+          }
+        }
+        return true;
+      });
+    }
+
     // Sort
     filtered.sort((a, b) => {
       let aValue: number | string = 0;
@@ -1009,7 +1039,7 @@ const ProfitabilityAnalyzerInner: React.FC<ProfitabilityAnalyzerProps> = ({
     });
 
     return filtered;
-  }, [parentProfitability, filterCategory, filterParent, filterFulfillment, sortColumn, sortDirection]);
+  }, [parentProfitability, filterCategory, filterParent, filterFulfillment, sortColumn, sortDirection, columnFilters]);
 
   const displayCategories = useMemo(() => {
     let filtered = [...categoryProfitability];

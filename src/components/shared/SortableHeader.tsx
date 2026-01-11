@@ -1,4 +1,5 @@
 import React from 'react';
+import { ColumnFilter, type ColumnFilterValue } from './ColumnFilter';
 
 interface SortableHeaderProps {
   column: string;
@@ -9,6 +10,10 @@ interface SortableHeaderProps {
   align?: 'left' | 'right' | 'center';
   color?: 'blue' | 'purple' | 'green' | 'amber';
   className?: string;
+  // Filter props (optional - if not provided, no filter icon shown)
+  filterable?: boolean;
+  filterValue?: ColumnFilterValue | null;
+  onFilterChange?: (column: string, value: ColumnFilterValue | null) => void;
 }
 
 const colorMap = {
@@ -27,6 +32,9 @@ export const SortableHeader: React.FC<SortableHeaderProps> = ({
   align = 'left',
   color = 'blue',
   className = '',
+  filterable = false,
+  filterValue = null,
+  onFilterChange,
 }) => {
   const alignClass = align === 'right' ? 'text-right justify-end' : align === 'center' ? 'text-center justify-center' : 'text-left';
 
@@ -36,11 +44,19 @@ export const SortableHeader: React.FC<SortableHeaderProps> = ({
       onClick={() => onSort(column)}
     >
       <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
-        {label}
+        <span className="whitespace-nowrap">{label}</span>
         {sortColumn === column && (
           <span className={colorMap[color]}>
             {sortDirection === 'asc' ? '↑' : '↓'}
           </span>
+        )}
+        {filterable && onFilterChange && (
+          <ColumnFilter
+            column={column}
+            value={filterValue}
+            onChange={onFilterChange}
+            color={color}
+          />
         )}
       </div>
     </th>

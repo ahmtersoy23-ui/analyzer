@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useCallback, useState } from 'react';
-import { Tag, Download, ChevronRight, Package } from 'lucide-react';
+import { Tag, Download, ChevronRight, Package, Filter, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useProfitabilityFilters } from '../../contexts/ProfitabilityFilterContext';
 import type { SelectedItemType } from './PieChartModal';
@@ -65,6 +65,10 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
     setShowPerUnit,
     setCurrentPage,
     handleSort,
+    columnFilters,
+    setColumnFilter,
+    activeFilterCount,
+    clearAllColumnFilters,
   } = useProfitabilityFilters();
 
   // Collapse state
@@ -436,15 +440,33 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
         </div>
       </div>
 
-      {/* Table Header showing count */}
-      <div className="text-sm font-semibold text-slate-700 mb-3">
-        {detailsViewMode === 'sku'
-          ? `${displaySkus.length} SKUs`
-          : detailsViewMode === 'name'
-          ? `${displayProducts.length} products`
-          : detailsViewMode === 'parent'
-          ? `${displayParents.length} parents`
-          : `${displayCategories.length} categories`}
+      {/* Table Header showing count and column filters */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm font-semibold text-slate-700">
+          {detailsViewMode === 'sku'
+            ? `${displaySkus.length} SKUs`
+            : detailsViewMode === 'name'
+            ? `${displayProducts.length} products`
+            : detailsViewMode === 'parent'
+            ? `${displayParents.length} parents`
+            : `${displayCategories.length} categories`}
+        </div>
+        {activeFilterCount > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-purple-600 flex items-center gap-1">
+              <Filter className="w-3 h-3" />
+              {activeFilterCount} column filter{activeFilterCount > 1 ? 's' : ''} active
+            </span>
+            <button
+              onClick={clearAllColumnFilters}
+              className="text-xs text-slate-500 hover:text-red-500 flex items-center gap-1 transition-colors"
+              title="Clear all column filters"
+            >
+              <X className="w-3 h-3" />
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Empty State */}
@@ -497,6 +519,8 @@ export const ProfitabilityDetailsTable: React.FC<ProfitabilityDetailsTableProps>
             formatMoney={formatMoney}
             onSort={handleSort}
             onSelectItem={onSelectItem}
+            columnFilters={columnFilters}
+            onFilterChange={setColumnFilter}
           />
         ) : (
           <ProductTable
