@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 const LoginPage: React.FC = () => {
   const { login, isLoading } = useAuth();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -16,14 +16,14 @@ const LoginPage: React.FC = () => {
     e.preventDefault();
     setError('');
 
-    if (!username.trim() || !password.trim()) {
-      setError('Please enter username and password');
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter email and password');
       return;
     }
 
     setIsSubmitting(true);
 
-    const result = await login(username.trim(), password);
+    const result = await login(email.trim().toLowerCase(), password);
 
     if (!result.success) {
       setError(result.error || 'Login failed');
@@ -63,18 +63,18 @@ const LoginPage: React.FC = () => {
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-slate-700 mb-2">
-              Username
+            <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
+              Email
             </label>
             <input
-              type="text"
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              type="email"
+              id="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              placeholder="Enter username"
+              placeholder="Enter email"
               disabled={isSubmitting}
-              autoComplete="username"
+              autoComplete="email"
             />
           </div>
 
