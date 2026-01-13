@@ -3,6 +3,7 @@ import './App.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
 import LoginPage from './components/LoginPage';
+import ForcePasswordChange from './components/ForcePasswordChange';
 import TransactionAnalyzer from './components/TransactionAnalyzer';
 import type { TransactionData, MarketplaceCode } from './types/transaction';
 import { fetchLiveRates } from './utils/currencyExchange';
@@ -253,7 +254,7 @@ function AppContent() {
 
 // App wrapper with AuthProvider
 function App() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, mustChangePassword } = useAuth();
 
   if (isLoading) {
     return <LoadingFallback />;
@@ -261,6 +262,11 @@ function App() {
 
   if (!isAuthenticated) {
     return <LoginPage />;
+  }
+
+  // Force password change if required
+  if (mustChangePassword) {
+    return <ForcePasswordChange />;
   }
 
   return <AppContent />;

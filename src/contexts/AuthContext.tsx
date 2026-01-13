@@ -6,11 +6,14 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 
 const API_BASE = 'https://amzsellmetrics.iwa.web.tr/api';
 
+type UserRole = 'admin' | 'editor' | 'viewer';
+
 interface User {
   id: number;
   username: string;
   email: string;
-  role: 'admin' | 'viewer';
+  role: UserRole;
+  mustChangePassword?: boolean;
 }
 
 interface AuthState {
@@ -23,7 +26,12 @@ interface AuthState {
 interface AuthContextType extends AuthState {
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  clearMustChangePassword: () => void;
   isAdmin: boolean;
+  isEditor: boolean;
+  canEdit: boolean; // admin or editor can edit
+  mustChangePassword: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -132,11 +140,60 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, []);
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/auth/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`,
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Clear the mustChangePassword flag locally
+        if (state.user) {
+          const updatedUser = { ...state.user, mustChangePassword: false };
+          localStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
+          setState(prev => ({
+            ...prev,
+            user: updatedUser,
+          }));
+        }
+        return { success: true };
+      } else {
+        return { success: false, error: data.error || 'Password change failed' };
+      }
+    } catch (error: any) {
+      console.error('[Auth] Change password error:', error);
+      return { success: false, error: 'Connection error. Please try again.' };
+    }
+  }, [state.token, state.user]);
+
+  const clearMustChangePassword = useCallback(() => {
+    if (state.user) {
+      const updatedUser = { ...state.user, mustChangePassword: false };
+      localStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
+      setState(prev => ({
+        ...prev,
+        user: updatedUser,
+      }));
+    }
+  }, [state.user]);
+
   const value: AuthContextType = {
     ...state,
     login,
     logout,
+    changePassword,
+    clearMustChangePassword,
     isAdmin: state.user?.role === 'admin',
+    isEditor: state.user?.role === 'editor',
+    canEdit: state.user?.role === 'admin' || state.user?.role === 'editor',
+    mustChangePassword: state.user?.mustChangePassword || false,
   };
 
   return (

@@ -7,11 +7,13 @@ import { useAuth } from '../contexts/AuthContext';
 
 const API_BASE = 'https://amzsellmetrics.iwa.web.tr/api';
 
+type UserRole = 'admin' | 'editor' | 'viewer';
+
 interface User {
   id: number;
   username: string;
   email: string | null;
-  role: 'admin' | 'viewer';
+  role: UserRole;
   is_active: boolean;
   created_at: string;
   last_login: string | null;
@@ -21,7 +23,7 @@ interface NewUser {
   username: string;
   email: string;
   password: string;
-  role: 'admin' | 'viewer';
+  role: UserRole;
 }
 
 const UserManagement: React.FC = () => {
@@ -253,9 +255,11 @@ const UserManagement: React.FC = () => {
                     <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
                       user.role === 'admin'
                         ? 'bg-purple-100 text-purple-700'
+                        : user.role === 'editor'
+                        ? 'bg-blue-100 text-blue-700'
                         : 'bg-slate-100 text-slate-600'
                     }`}>
-                      {user.role}
+                      {user.role === 'admin' ? 'Admin' : user.role === 'editor' ? 'Editor' : 'Viewer'}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -336,10 +340,11 @@ const UserManagement: React.FC = () => {
                   <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
                   <select
                     value={newUser.role}
-                    onChange={(e) => setNewUser({ ...newUser, role: e.target.value as 'admin' | 'viewer' })}
+                    onChange={(e) => setNewUser({ ...newUser, role: e.target.value as UserRole })}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                   >
                     <option value="viewer">Viewer (Read-only)</option>
+                    <option value="editor">Editor (Can edit data)</option>
                     <option value="admin">Admin (Full access)</option>
                   </select>
                 </div>
@@ -394,11 +399,12 @@ const UserManagement: React.FC = () => {
                   <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
                   <select
                     value={editingUser.role}
-                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as 'admin' | 'viewer' })}
+                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as UserRole })}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                     disabled={editingUser.id === currentUser?.id}
                   >
                     <option value="viewer">Viewer (Read-only)</option>
+                    <option value="editor">Editor (Can edit data)</option>
                     <option value="admin">Admin (Full access)</option>
                   </select>
                 </div>
